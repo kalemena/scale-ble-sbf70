@@ -1,0 +1,6 @@
+= Scale Ble SBF70
+
+This repository contain few script to interact with scale using bluetooth.
+The project does not want to advocate for a technology or a platform.
+Instead, goal is to enable simple operations onto the scale, and separate chain of tools for analysis.
+
