@@ -1,0 +1,8 @@
+= SBF70 BLE CLI
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+:source-highlighter: rouge
+
+Minimal Python CLI to talk to *Sanitas SBF70* (and the same Beurer/Sanitas family: Beurer BF710, Silvercrest SBF75, Crane / `AICDSCALE1`) over Bluetooth Low Energy.
