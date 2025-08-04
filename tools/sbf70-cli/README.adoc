@@ -6,3 +6,39 @@
 :source-highlighter: rouge
 
 Minimal Python CLI to talk to *Sanitas SBF70* (and the same Beurer/Sanitas family: Beurer BF710, Silvercrest SBF75, Crane / `AICDSCALE1`) over Bluetooth Low Energy.
+
+The protocol is ported from openScale's `BeurerSanitasHandler` (GATT service `0xFFE0`, characteristic `0xFFE1`, start byte `0xE7`).
+
+[NOTE]
+====
+The scale sleeps aggressively. *Wake it* (step on briefly, or start a weigh-in) so it advertises, then run the CLI within ~15 seconds.
+====
+
+== Supported devices
+
+Detected by advertised name substring (case-insensitive):
+
+* `SANITAS SBF70`
+* `SBF75` (Silvercrest)
+* `AICDSCALE1` (Crane / rebrand)
+* `BEURER BF710` / `BF700` family names also match (same protocol family; BF700/800 use start byte `0xF7` in openScale — this CLI targets the `0xE7` / SBF70 path)
+
+== Requirements
+
+* Python *3.10+* (3.11/3.12 recommended)
+* A working BLE adapter
+* OS support via https://github.com/hbldh/bleak[Bleak]:
+** *macOS* — Core Bluetooth (address is a UUID, not a classic MAC)
+** *Linux* — BlueZ
+** *Windows* — WinRT BLE stack
+
+=== Platform notes
+
+macOS::
+* Grant *Bluetooth* permission to your terminal app (System Settings → Privacy & Security → Bluetooth).
+* Device “address” from `scan` looks like `XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX`. Pass it with `-a`.
+
+Linux::
+* User typically needs access to BlueZ / D-Bus (often membership in `bluetooth` group, or run with appropriate permissions).
+* Address is usually `AA:BB:CC:DD:EE:FF`.
+
