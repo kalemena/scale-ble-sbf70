@@ -42,3 +42,228 @@ Linux::
 * User typically needs access to BlueZ / D-Bus (often membership in `bluetooth` group, or run with appropriate permissions).
 * Address is usually `AA:BB:CC:DD:EE:FF`.
 
+== Install
+
+From the openScale repository root:
+
+[source,bash]
+----
+cd tools/sbf70-cli
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip3 install -r requirements.txt
+----
+
+Verify:
+
+[source,bash]
+----
+python sbf70.py --help
+----
+
+Optional: make the script executable and invoke it directly:
+
+[source,bash]
+----
+chmod +x sbf70.py
+./sbf70.py scan
+----
+
+== Quick start
+
+[source,bash]
+----
+# 1) Wake the scale, then scan
+python sbf70.py scan
+
+# 2) Read battery / unit / firmware-ish version
+python sbf70.py status -v
+
+# 3) List users stored on the scale
+python sbf70.py users --details
+
+# 4) Download saved measurements (JSON on stdout)
+python sbf70.py history
+----
+
+Pin a device when several are nearby (or on macOS after first discovery):
+
+[source,bash]
+----
+python sbf70.py -a <ADDRESS> status
+----
+
+== Global options
+
+These apply to every subcommand (place them *before* the subcommand):
+
+[cols="1,3",options="header"]
+|===
+| Option | Description
+
+| `-a`, `--address ADDRESS`
+| Scale identity: MAC on Linux/Windows, CoreBluetooth UUID on macOS. If omitted, the CLI scans and auto-picks a matching device (errors if zero or multiple).
+
+| `-v`, `--verbose`
+| Log every raw BLE write/notification as hex to stderr (protocol debugging).
+
+| `--timeout SECONDS`
+| Per-response wait timeout (default: `30`).
+
+| `--scan-timeout SECONDS`
+| Discovery duration when resolving/scanning (default: `12`).
+|===
+
+Example:
+
+[source,bash]
+----
+python sbf70.py -a 00:11:22:33:44:55 -v --timeout 45 history --uid 0000000000000065
+----
+
+== Commands
+
+All successful commands print *JSON on stdout*. Progress / prompts go to *stderr*.
+
+=== `scan`
+
+Discover SBF70-family advertisers.
+
+[source,bash]
+----
+python sbf70.py scan
+python sbf70.py scan --scan-timeout 20
+----
+
+Example output:
+
+[source,json]
+----
+[
+  {
+    "address": "A1B2C3D4-E5F6-7890-ABCD-EF1234567890",
+    "name": "SANITAS SBF70",
+    "rssi": -62
+  }
+]
+----
+
+=== `status`
+
+Connect, run INIT + SET_TIME, then query scale status (`CMD 0x4F`).
+
+[source,bash]
+----
+python sbf70.py status
+----
+
+Useful fields: `battery` (0–255 raw level as reported by the scale), `unit` (`kg` / `lb` / `st`), thresholds, `version`.
+
+=== `users`
+
+List user profiles stored in scale memory (`CMD 0x33` / `0x34`).
+
+[source,bash]
+----
+python sbf70.py users
+python sbf70.py users --details
+----
+
+`--details`:: Also issues `CMD 0x36` (USER_DETAILS) for birthday, height, sex, activity.
+
+[IMPORTANT]
+====
+User nicknames on the scale are *3 ASCII characters*. Body composition for a user usually requires that profile to exist on the scale (often created once with the vendor HealthCoach / Beurer app, or by openScale). Matching names matter when syncing with openScale.
+====
+
+=== `history`
+
+Download *saved* measurements for one or all known users (`CMD 0x41` / `0x42`).
+
+[source,bash]
+----
+python sbf70.py history
+python sbf70.py history --uid 0000000000000065
+python sbf70.py history --uid 0000000000000065 --delete
+----
+
+`--uid`:: Hex user id (16 hex digits, `0x` / separators optional). Default: every user returned by `users`.
+
+`--delete`:: After a successful download for a user, delete that user's saved history on the scale (`CMD 0x43`). Prefer this over a separate delete when you want “sync then free space” in one shot.
+
+Each measurement includes weight, impedance, fat / water / muscle %, bone mass, and UTC timestamp.
+
+=== `measure`
+
+Trigger a *live* weigh-in for a registered user (`CMD 0x40`), stream live weight frames (`0x58`), and wait for body-composition parts (`0x59`).
+
+[source,bash]
+----
+python sbf70.py measure --uid 0000000000000065
+python sbf70.py measure --uid 0000000000000065 --hold 25 -v
+----
+
+`--uid`:: *Required.* Scale user id (hex).
+
+`--hold`:: Seconds to keep listening after the measure command (default: `20`). Bioimpedance often arrives several seconds after weight stabilizes.
+
+[TIP]
+====
+For routine capture it is often more reliable to weigh *without* the CLI (scale stores the reading), wake the scale, then run `history`. Use `measure` when you want an interactive session.
+====
+
+=== `unknown`
+
+List *guest / unassigned* measurements and their slot indices (`CMD 0x46` / `0x47`).
+
+[source,bash]
+----
+python sbf70.py unknown
+----
+
+Slots are stable identifiers used by `delete-unknown --index`.
+
+=== `delete-saved`
+
+Clear *all saved measurements for one user* (`CMD 0x43`). Does not remove the user profile.
+
+[source,bash]
+----
+python sbf70.py delete-saved --uid 0000000000000065
+python sbf70.py delete-saved --uid 0000000000000065 --yes
+----
+
+`--yes` / `-y`:: Skip the interactive `YES` confirmation.
+
+=== `delete-unknown`
+
+Delete guest measurement(s) by slot (`CMD 0x49`).
+
+[source,bash]
+----
+# Inspect slots first
+python sbf70.py unknown
+
+# Delete one slot
+python sbf70.py delete-unknown --index 0 --yes
+
+# Delete every unknown measurement currently stored
+python sbf70.py delete-unknown --all --yes
+----
+
+Pass either `--index N` *or* `--all`, not both.
+
+=== `delete-user`
+
+Remove a user profile from the scale (`CMD 0x32`).
+
+[source,bash]
+----
+python sbf70.py delete-user --uid 0000000000000065 --yes
+----
+
+[WARNING]
+====
+This is destructive. Recreating the user may require the vendor app or openScale, and a reference weigh-in. Prefer `delete-saved` when you only need to free history space.
+====
+
