@@ -267,3 +267,152 @@ python sbf70.py delete-user --uid 0000000000000065 --yes
 This is destructive. Recreating the user may require the vendor app or openScale, and a reference weigh-in. Prefer `delete-saved` when you only need to free history space.
 ====
 
+== Freeing space when history is full
+
+There is *no* single “wipe all history” opcode in the published Beurer/Sanitas protocol. To reclaim storage:
+
+. Optional: `history` (backup JSON).
+. For each user: `delete-saved --uid … --yes` (or `history --delete`).
+. Clear guests: `delete-unknown --all --yes`.
+. Only if needed: `delete-user --uid … --yes` to remove profiles.
+
+The only documented “full” status in the protocol is for *adding users* (`CMD 0x31` → status `01`), not for measurement history.
+
+== Typical workflows
+
+=== Read-only inventory
+
+[source,bash]
+----
+python sbf70.py scan
+python sbf70.py -a <ADDRESS> status
+python sbf70.py -a <ADDRESS> users --details
+python sbf70.py -a <ADDRESS> history
+python sbf70.py -a <ADDRESS> unknown
+----
+
+=== Sync history then clear (per user)
+
+[source,bash]
+----
+python sbf70.py history --uid 0000000000000065 --delete | tee measurements.json
+----
+
+=== Live measurement debug
+
+[source,bash]
+----
+python sbf70.py -v measure --uid 0000000000000065 --hold 30
+----
+
+== Output format
+
+Stdout is JSON. Measurement-shaped objects include fields such as:
+
+[cols="1,3",options="header"]
+|===
+| Field | Meaning
+
+| `timestamp`
+| Unix time (UTC seconds) from the scale payload
+
+| `time_iso`
+| Same instant as ISO-8601 UTC
+
+| `weight_kg`
+| Weight (50 g resolution)
+
+| `impedance`
+| Raw bioimpedance value from the scale
+
+| `fat_pct`, `water_pct`, `muscle_pct`
+| Body composition percentages (0.1 % resolution)
+
+| `bone_kg`
+| Bone mass estimate
+
+| `uid`
+| Owning user id as 16-digit hex (when applicable)
+|===
+
+Pipe to tools as needed:
+
+[source,bash]
+----
+python sbf70.py history | jq '.measurements[] | {time_iso, weight_kg, fat_pct}'
+----
+
+== Protocol summary
+
+[cols="1,1,3",options="header"]
+|===
+| Item | Value | Notes
+
+| Service
+| `0000ffe0-0000-1000-8000-00805f9b34fb`
+| Custom vendor service
+
+| Characteristic
+| `0000ffe1-0000-1000-8000-00805f9b34fb`
+| Notify + write
+
+| Command start byte (SBF70)
+| `0xE7`
+| BF700/800 family uses `0xF7` in openScale
+
+| INIT
+| `E6 01`
+| Alternate start nibble `6`
+
+| SET_TIME
+| `E9` + unix uint32 BE
+| Alternate start nibble `9`
+
+| APP ACK
+| `E7 F1` + echo of bytes `[1..3]`
+| Required for multi-part frames (`0x42`, `0x47`, `0x58`, `0x59`, …)
+
+| Weight frame
+| `E7 58 flag weight_hi weight_lo`
+| Compact 5-byte SBF70 layout; kg = BE uint16 × 50 / 1000
+|===
+
+Further reading:
+
+* openScale handler: `android_app/.../BeurerSanitasHandler.kt`
+* Protocol wiki: https://github.com/oliexdev/openScale/wiki/Beurer-Sanitas[Beurer Sanitas]
+* Related projects: https://github.com/danielfaust/bt-scale[danielfaust/bt-scale] (legacy Python 2 / gatttool), https://github.com/KristianP26/ble-scale-sync[ble-scale-sync] (TypeScript CLI)
+
+== Troubleshooting
+
+Scale not found::
+* Step on the scale to wake advertising, then immediately `scan`.
+* Increase `--scan-timeout`.
+* On macOS, confirm the terminal has Bluetooth permission.
+* On Linux, check `bluetoothctl scan on` and adapter power.
+
+Timeouts after connect::
+* Scale went back to sleep — wake and retry.
+* Another phone app may hold the connection; close HealthCoach / openScale / etc.
+* Use `-v` to see whether INIT (`E6 …`) ever arrives.
+
+Weight only / zeros for fat-water-muscle::
+* User may not be registered on the scale, or the wrong `--uid` was used.
+* Create/match the profile with the vendor app or openScale, then weigh again.
+
+`DO_MEASUREMENT rejected`::
+* User id missing or invalid on the scale — run `users` and copy a real `uid`.
+
+Permission / D-Bus errors (Linux)::
+* Ensure BlueZ is running and your user can access the BLE adapter.
+
+== Project layout
+
+[source]
+----
+tools/sbf70_cli/
+├── README.adoc          ← this file
+├── requirements.txt     ← bleak
+└── sbf70.py             ← CLI entrypoint
+----
+
