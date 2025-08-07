@@ -416,3 +416,44 @@ tools/sbf70_cli/
 └── sbf70.py             ← CLI entrypoint
 ----
 
+== Examples
+
+[source,json]
+----
+python3 sbf70.py history 
+{
+  "address": "12345678-ABCD-EFGH-IJKL-123456789876",
+  "name": "SANITAS SBF70",
+  "status": {
+    "battery": 91,
+    "weight_threshold_kg": 4.0,
+    "fat_threshold": 22.0,
+    "unit": "kg",
+    "user_exists": false,
+    "user_ref_weight_exists": false,
+    "user_measurement_exists": false,
+    "version": 5
+  },
+  "users": [
+    {
+      "uid": "0000000000000065",
+      "name": "CLE",
+      "year": 2000
+    }
+  ],
+  "measurements": [
+    {
+      "timestamp": 1785096316,
+      "time_iso": "2026-07-26T20:05:16+00:00",
+      "weight_kg": 12.34,
+      "impedance": 123,
+      "fat_pct": 12.3,
+      "water_pct": 32.1,
+      "muscle_pct": 32.1,
+      "bone_kg": 12.34,
+      "uid": "0000000000000065",
+      "user_name": "CLE"
+    }
+  ]
+}
+----
