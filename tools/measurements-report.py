@@ -22,15 +22,14 @@ def parse_measurements(data: dict) -> list[dict]:
     return sorted(measurements, key=lambda m: m.get("timestamp", 0))
 
 
-def build_chart_data(measurements: list[dict], field: str) -> tuple[list[str], list[float | None]]:
-    labels = []
-    values = []
+def build_chart_data(measurements: list[dict], field: str) -> list[dict]:
+    points = []
     for m in measurements:
         ts = m.get("timestamp", 0)
-        dt = datetime.fromtimestamp(ts, tz=timezone.utc) if ts else None
-        labels.append(dt.strftime("%Y-%m-%d %H:%M") if dt else "N/A")
-        values.append(m.get(field))
-    return labels, values
+        val = m.get(field)
+        if ts and val is not None:
+            points.append({"x": ts * 1000, "y": val})
+    return points
 
 
 def generate_html(data: dict) -> str:
@@ -39,15 +38,14 @@ def generate_html(data: dict) -> str:
 
     charts_js = ""
     for i, (field, title) in enumerate(FIELDS):
-        labels, values = build_chart_data(measurements, field)
+        points = build_chart_data(measurements, field)
         charts_js += f"""
         new Chart(document.getElementById('chart{i}'), {{
             type: 'line',
             data: {{
-                labels: {json.dumps(labels)},
                 datasets: [{{
                     label: '{title}',
-                    data: {json.dumps(values)},
+                    data: {json.dumps(points)},
                     borderColor: '#3b82f6',
                     backgroundColor: 'rgba(59,130,246,0.1)',
                     fill: true,
@@ -59,7 +57,11 @@ def generate_html(data: dict) -> str:
                 responsive: true,
                 plugins: {{ title: {{ display: true, text: '{title}' }} }},
                 scales: {{
-                    x: {{ title: {{ display: true, text: 'Date' }} }},
+                    x: {{
+                        type: 'time',
+                        time: {{ tooltipFormat: 'PPpp' }},
+                        title: {{ display: true, text: 'Date' }}
+                    }},
                     y: {{ title: {{ display: true, text: '{title}' }} }}
                 }}
             }}
@@ -78,6 +80,7 @@ def generate_html(data: dict) -> str:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scale Measurements Report - {uid}</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <style>
         body {{ font-family: system-ui, sans-serif; margin: 2rem; background: #f8fafc; color: #1e293b; }}
         h1 {{ margin-bottom: 0.25rem; }}
