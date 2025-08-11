@@ -36,11 +36,19 @@ def generate_html(data: dict) -> str:
     measurements = parse_measurements(data)
     uid = measurements[0].get("uid", "unknown") if measurements else "unknown"
 
-    charts_js = ""
+    chart_defs = []
     for i, (field, title) in enumerate(FIELDS):
         points = build_chart_data(measurements, field)
-        charts_js += f"""
-        new Chart(document.getElementById('chart{i}'), {{
+        chart_defs.append((i, title, points))
+
+    charts_html = "\n".join(
+        f'<div class="chart-container"><canvas id="chart{i}"></canvas></div>'
+        for i, _, _ in chart_defs
+    )
+
+    chart_inits = ""
+    for i, title, points in chart_defs:
+        chart_inits += f"""        charts[{i}] = new Chart(document.getElementById('chart{i}'), {{
             type: 'line',
             data: {{
                 datasets: [{{
@@ -55,7 +63,10 @@ def generate_html(data: dict) -> str:
             }},
             options: {{
                 responsive: true,
-                plugins: {{ title: {{ display: true, text: '{title}' }} }},
+                plugins: {{
+                    title: {{ display: true, text: '{title}' }},
+                    tooltip: {{ mode: 'index', intersect: false }}
+                }},
                 scales: {{
                     x: {{
                         type: 'time',
@@ -63,15 +74,11 @@ def generate_html(data: dict) -> str:
                         title: {{ display: true, text: 'Date' }}
                     }},
                     y: {{ title: {{ display: true, text: '{title}' }} }}
-                }}
+                }},
+                onHover: syncTooltips
             }}
         }});
 """
-
-    charts_html = "\n".join(
-        f'<div class="chart-container"><canvas id="chart{i}"></canvas></div>'
-        for i in range(len(FIELDS))
-    )
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -94,7 +101,36 @@ def generate_html(data: dict) -> str:
     <div class="meta">User: {uid} | Measurements: {len(measurements)}</div>
     {charts_html}
     <script>
-    {charts_js}
+    const charts = [];
+    let syncing = false;
+
+    function syncTooltips(event, elements, chart) {{
+        if (syncing) return;
+        if (!elements.length) {{
+            charts.forEach((c, i) => {{
+                if (c !== chart) c.setActiveElements([]);
+            }});
+            return;
+        }}
+        syncing = true;
+        const x = chart.data.datasets[0].data[elements[0].index].x;
+        charts.forEach((c, i) => {{
+            if (c === chart) return;
+            const ds = c.data.datasets[0].data;
+            let closest = 0;
+            let minDist = Infinity;
+            ds.forEach((pt, j) => {{
+                const dist = Math.abs(pt.x - x);
+                if (dist < minDist) {{ minDist = dist; closest = j; }}
+            }});
+            c.setActiveElements([{{ datasetIndex: 0, index: closest }}]);
+            c.tooltip.setActiveElements([{{ datasetIndex: 0, index: closest }}], {{ x: 0, y: 0 }});
+            c.update('none');
+        }});
+        syncing = false;
+    }}
+
+{chart_inits}
     </script>
 </body>
 </html>"""
