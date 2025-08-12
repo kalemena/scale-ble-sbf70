@@ -50,6 +50,7 @@ def generate_html(data: dict) -> str:
     for i, title, points in chart_defs:
         chart_inits += f"""        charts[{i}] = new Chart(document.getElementById('chart{i}'), {{
             type: 'line',
+            plugins: [crosshairPlugin],
             data: {{
                 datasets: [{{
                     label: '{title}',
@@ -103,19 +104,43 @@ def generate_html(data: dict) -> str:
     <script>
     const charts = [];
     let syncing = false;
+    let crosshairX = null;
+
+    const crosshairPlugin = {{
+        id: 'crosshair',
+        afterDraw(chart) {{
+            if (crosshairX === null) return;
+            const xScale = chart.scales.x;
+            const ctx = chart.ctx;
+            const xPixel = xScale.getPixelForValue(crosshairX);
+            const area = chart.chartArea;
+            if (xPixel < area.left || xPixel > area.right) return;
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(xPixel, area.top);
+            ctx.lineTo(xPixel, area.bottom);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(239,68,68,0.7)';
+            ctx.setLineDash([4, 4]);
+            ctx.stroke();
+            ctx.restore();
+        }}
+    }};
 
     function syncTooltips(event, elements, chart) {{
         if (syncing) return;
         if (!elements.length) {{
-            charts.forEach((c, i) => {{
-                if (c !== chart) c.setActiveElements([]);
+            crosshairX = null;
+            charts.forEach(c => {{
+                c.setActiveElements([]);
+                c.update('none');
             }});
             return;
         }}
         syncing = true;
         const x = chart.data.datasets[0].data[elements[0].index].x;
-        charts.forEach((c, i) => {{
-            if (c === chart) return;
+        crosshairX = x;
+        charts.forEach(c => {{
             const ds = c.data.datasets[0].data;
             let closest = 0;
             let minDist = Infinity;
