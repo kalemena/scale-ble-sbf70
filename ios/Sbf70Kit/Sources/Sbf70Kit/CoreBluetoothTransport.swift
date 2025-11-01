@@ -1,6 +1,24 @@
 import CoreBluetooth
 import Foundation
 
+/// A freshly created `CBCentralManager` reports `.unknown` until
+/// `centralManagerDidUpdateState` fires asynchronously. Poll until the state
+/// resolves; only `.unknown`/`.resetting` are treated as transient.
+/// Returns immediately for terminal states (poweredOff, unauthorized, ...).
+func awaitResolvedBluetoothState(
+    _ central: CBCentralManager,
+    timeout: TimeInterval = 5.0
+) async -> CBManagerState {
+    let deadline = ContinuousClock.now + .seconds(timeout)
+    while central.state == .unknown || central.state == .resetting {
+        if ContinuousClock.now >= deadline {
+            return central.state
+        }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+    return central.state
+}
+
 /// CoreBluetooth implementation of `ScaleTransport` for characteristic FFE1.
 ///
 /// Owns a `CBCentralManager`, connects to a peripheral, discovers the FFE0
@@ -11,6 +29,7 @@ public final class CoreBluetoothTransport: NSObject, ScaleTransport {
         case bluetoothUnavailable(CBManagerState)
         case serviceNotFound
         case characteristicNotFound
+        case peripheralNotFound
         case connectionFailed
         case writeFailed
 
@@ -20,12 +39,16 @@ public final class CoreBluetoothTransport: NSObject, ScaleTransport {
                 switch state {
                 case .unauthorized: return "Bluetooth permission denied. Enable it in Settings."
                 case .poweredOff: return "Bluetooth is off. Turn it on and retry."
+                case .unknown: return "Bluetooth is starting up. Toggle Bluetooth in Control Center, then retry."
+                case .resetting: return "Bluetooth is resetting. Try again in a moment."
                 default: return "Bluetooth is unavailable (state \(state.rawValue))."
                 }
             case .serviceNotFound:
                 return "Scale service FFE0 not found."
             case .characteristicNotFound:
                 return "Scale characteristic FFE1 not found."
+            case .peripheralNotFound:
+                return "Scale not found by Bluetooth. Wake it (step on it) and rescan."
             case .connectionFailed:
                 return "Could not connect to the scale. Wake it (step on it) and retry."
             case .writeFailed:
@@ -59,9 +82,21 @@ public final class CoreBluetoothTransport: NSObject, ScaleTransport {
 
     // MARK: - Connect / disconnect
 
-    public func connect(to peripheral: CBPeripheral) async throws {
-        guard central.state == .poweredOn else {
-            throw TransportError.bluetoothUnavailable(central.state)
+    /// Connect by peripheral identifier.
+    ///
+    /// The peripheral is re-vended from *this* transport's own central via
+    /// `retrievePeripherals` — CoreBluetooth requires the connecting manager
+    /// to be the one that vended the peripheral (the scanner's manager vended
+    /// the instance the user tapped).
+    public func connect(to identifier: UUID) async throws {
+        // The manager was just created; its state is .unknown until the
+        // first centralManagerDidUpdateState callback — wait for it.
+        let state = await awaitResolvedBluetoothState(central)
+        guard state == .poweredOn else {
+            throw TransportError.bluetoothUnavailable(state)
+        }
+        guard let peripheral = central.retrievePeripherals(withIdentifiers: [identifier]).first else {
+            throw TransportError.peripheralNotFound
         }
         self.peripheral = peripheral
         peripheral.delegate = self
@@ -258,6 +293,7 @@ public final class ScaleScanner: NSObject, ObservableObject {
 
     private var central: CBCentralManager!
     private var peripherals: [UUID: CBPeripheral] = [:]
+    private var scanGeneration = 0
 
     public override init() {
         super.init()
@@ -265,23 +301,36 @@ public final class ScaleScanner: NSObject, ObservableObject {
     }
 
     public func startScan(timeout: TimeInterval = 12.0) {
-        guard central.state == .poweredOn else {
-            bluetoothUnavailable = true
-            return
-        }
-        bluetoothUnavailable = false
-        devices = []
+        guard !isScanning else { return }
+        // Show scanning immediately; the manager may still be .unknown on
+        // first launch — resolve its state before actually scanning.
         isScanning = true
-        central.scanForPeripherals(withServices: nil, options: [
-            CBCentralManagerScanOptionAllowDuplicatesKey: false,
-        ])
+        devices = []
+        bluetoothUnavailable = false
+        scanGeneration += 1
+        let generation = scanGeneration
         Task { @MainActor [weak self] in
+            guard let self else { return }
+            let state = await awaitResolvedBluetoothState(self.central)
+            guard state == .poweredOn else {
+                guard generation == self.scanGeneration else { return }
+                self.isScanning = false
+                self.bluetoothUnavailable = true
+                return
+            }
+            guard generation == self.scanGeneration, self.isScanning else { return }
+            self.central.scanForPeripherals(withServices: nil, options: [
+                CBCentralManagerScanOptionAllowDuplicatesKey: false,
+            ])
             try? await Task.sleep(for: .seconds(timeout))
-            self?.stopScan()
+            // Only stop the scan this task started (a newer scan may run).
+            guard generation == self.scanGeneration else { return }
+            self.stopScan()
         }
     }
 
     public func stopScan() {
+        scanGeneration += 1 // invalidate any pending scan/timeout task
         central.stopScan()
         isScanning = false
     }
@@ -293,7 +342,13 @@ public final class ScaleScanner: NSObject, ObservableObject {
 
 extension ScaleScanner: @preconcurrency CBCentralManagerDelegate {
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        bluetoothUnavailable = central.state != .poweredOn
+        // Self-recovery: clears a stale "unavailable" flag as soon as
+        // Bluetooth becomes ready (and flags real outages like poweredOff).
+        if central.state == .poweredOn {
+            bluetoothUnavailable = false
+        } else if central.state != .unknown {
+            bluetoothUnavailable = true
+        }
     }
 
     public func centralManager(

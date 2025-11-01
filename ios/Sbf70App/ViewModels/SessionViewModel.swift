@@ -23,12 +23,13 @@ final class SessionViewModel: ObservableObject {
         return false
     }
 
-    func connect(to peripheral: CBPeripheral) async {
+    func connect(id: UUID, name: String?) async {
         state = .connecting
-        deviceName = peripheral.name
+        deviceName = name
         let newTransport = CoreBluetoothTransport()
         do {
-            try await newTransport.connect(to: peripheral)
+            // Transport re-vends the peripheral from its own central manager.
+            try await newTransport.connect(to: id)
             let newClient = SBF70Client(transport: newTransport, timeout: 10)
             await newClient.start()
             try await newClient.initSession()
@@ -37,8 +38,8 @@ final class SessionViewModel: ObservableObject {
             state = .ready
 
             var settings = (try? await JsonStore.shared.loadSettings()) ?? .init()
-            settings.lastPeripheralUUID = peripheral.identifier.uuidString
-            settings.lastDeviceName = peripheral.name
+            settings.lastPeripheralUUID = id.uuidString
+            settings.lastDeviceName = name
             try? await JsonStore.shared.saveSettings(settings)
         } catch {
             await newTransport.close()

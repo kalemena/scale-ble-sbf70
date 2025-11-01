@@ -110,12 +110,8 @@ struct ScannerView: View {
     private func connect(to device: FoundDevice) {
         connectingID = device.id
         scanner.stopScan()
-        guard let peripheral = scanner.peripheral(for: device.id) else {
-            connectingID = nil
-            return
-        }
         Task {
-            await session.connect(to: peripheral)
+            await session.connect(id: device.id, name: device.name)
             connectingID = nil
             if session.isReady {
                 appSettings.settings.lastPeripheralUUID = device.id.uuidString
