@@ -131,6 +131,11 @@ public actor SBF70Client {
     // MARK: - Session lifecycle (sbf70.py:242-324)
 
     /// Drain stale notifications, INIT (`E6 01`), then SET_TIME (`E9` + unix).
+    ///
+    /// The scale's app session lapses after a short inactivity window — a
+    /// command sent against a stale session is silently ignored (no reply →
+    /// timeout). The CLI always runs command batches against a freshly
+    /// initialized session; call this before each batch, not just at connect.
     public func initSession() async throws {
         drain()
 
@@ -390,11 +395,15 @@ public actor SBF70Client {
 
     /// Trigger a measurement for `uid`; collect live weights + body-comp if
     /// available (sbf70.py:463-534).
+    ///
+    /// Re-initializes the session first — DO_MEASUREMENT against a lapsed
+    /// session gets no reply (the CLI always measures on a fresh session).
     public func liveMeasure(
         uid: UInt64,
         hold: TimeInterval = 30.0,
         onWeight: (@Sendable (_ kg: Double, _ stable: Bool) -> Void)? = nil
     ) async throws -> (weights: [Double], measurement: ScaleMeasurement?) {
+        try await initSession()
         try await write(cmd(ScaleCmd.doMeasurement, ScaleCodec.encodeUID(uid)))
         let ackFrame = try await wait { f in
             f.count >= 4

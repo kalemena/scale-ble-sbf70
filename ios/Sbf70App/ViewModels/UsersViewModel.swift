@@ -15,6 +15,7 @@ final class UsersViewModel: ObservableObject {
         errorMessage = nil
         defer { isLoading = false }
         do {
+            try await client.initSession() // stale sessions time out (see SBF70Client.initSession)
             let listed = try await client.listUsers()
             var detailed: [String: ScaleUser] = [:]
             for user in listed {
@@ -36,6 +37,7 @@ final class UsersViewModel: ObservableObject {
         errorMessage = nil
         noticeMessage = nil
         do {
+            try await client.initSession()
             let ok = try await client.deleteUser(uid: user.uid)
             if ok {
                 noticeMessage = "Deleted \(user.name) from the scale."
@@ -53,6 +55,7 @@ final class UsersViewModel: ObservableObject {
         errorMessage = nil
         noticeMessage = nil
         do {
+            try await client.initSession()
             let listed = try await client.listUsers()
             let uid = SBF70Client.nextRemoteUID(existing: listed)
             let ok = try await client.addUser(uid: uid, newUser)

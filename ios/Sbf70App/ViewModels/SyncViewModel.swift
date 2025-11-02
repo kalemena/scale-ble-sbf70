@@ -26,6 +26,9 @@ final class SyncViewModel: ObservableObject {
 
         let uid = UInt64(uidHex, radix: 16) ?? 0
         do {
+            // Re-init: the scale's session lapses after inactivity, and
+            // stale-session commands are silently ignored (timeout).
+            try await client.initSession()
             // Refresh status first — also acts as a wake/liveness check.
             _ = try await client.getStatus(uid: uid)
 
