@@ -157,11 +157,11 @@ struct HistoryView: View {
     /// CLI-compatible JSON for piping into tools/measurements-report.py.
     private var shareURL: URL? {
         guard !measurements.isEmpty, let uidHex = appSettings.activeUidHex else { return nil }
-        let payload: [String: Any] = [
-            "uid": uidHex,
-            "measurements": measurements,
-        ]
-        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) else {
+        // JSONEncoder, not JSONSerialization: the latter rejects Swift structs
+        // boxed as __SwiftValue ("Invalid type in JSON write").
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(CLIExportPayload(uid: uidHex, measurements: measurements)) else {
             return nil
         }
         let url = FileManager.default.temporaryDirectory
@@ -169,4 +169,10 @@ struct HistoryView: View {
         try? data.write(to: url, options: .atomic)
         return url
     }
+}
+
+/// Matches `sbf70.py history` JSON output shape (keys come from CodingKeys).
+private struct CLIExportPayload: Encodable {
+    let uid: String
+    let measurements: [ScaleMeasurement]
 }
