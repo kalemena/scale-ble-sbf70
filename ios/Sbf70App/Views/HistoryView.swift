@@ -12,6 +12,7 @@ struct HistoryView: View {
     @State private var showWater = false
     @State private var showMuscle = false
     @State private var exportURL: URL?
+    @State private var pendingDeletion: ScaleMeasurement?
 
     var body: some View {
         NavigationStack {
@@ -50,6 +51,29 @@ struct HistoryView: View {
         .onChange(of: appSettings.activeUidHex) { _, _ in
             Task { await reload() }
         }
+        .confirmationDialog(
+            "Delete measurement?",
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingDeletion
+        ) { measurement in
+            Button("Delete", role: .destructive) {
+                delete(measurement)
+                pendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDeletion = nil
+            }
+        } message: { measurement in
+            Text(
+                "\(measurement.date.formatted(date: .abbreviated, time: .shortened)) · "
+                    + String(format: "%.2f kg", measurement.weightKg)
+                    + " will be removed from this device."
+            )
+        }
     }
 
     private var chartAndList: some View {
@@ -71,9 +95,9 @@ struct HistoryView: View {
             Section("\(measurements.count) readings") {
                 ForEach(measurements.reversed()) { measurement in
                     row(measurement)
-                        .swipeActions {
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
-                                delete(measurement)
+                                pendingDeletion = measurement
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
