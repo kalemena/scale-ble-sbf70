@@ -13,6 +13,7 @@ struct HistoryView: View {
     @State private var showMuscle = false
     @State private var exportURL: URL?
     @State private var pendingDeletion: ScaleMeasurement?
+    @State private var detailMeasurement: ScaleMeasurement?
 
     var body: some View {
         NavigationStack {
@@ -74,6 +75,9 @@ struct HistoryView: View {
                     + " will be removed from this device."
             )
         }
+        .sheet(item: $detailMeasurement) { measurement in
+            MeasurementDetailSheet(measurement: measurement)
+        }
     }
 
     private var chartAndList: some View {
@@ -95,6 +99,10 @@ struct HistoryView: View {
             Section("\(measurements.count) readings") {
                 ForEach(measurements.reversed()) { measurement in
                     row(measurement)
+                        .contentShape(Rectangle())
+                        .onLongPressGesture {
+                            detailMeasurement = measurement
+                        }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
                                 pendingDeletion = measurement
@@ -199,4 +207,44 @@ struct HistoryView: View {
 private struct CLIExportPayload: Encodable {
     let uid: String
     let measurements: [ScaleMeasurement]
+}
+
+/// Long-press detail sheet: every field stored for one reading.
+private struct MeasurementDetailSheet: View {
+    let measurement: ScaleMeasurement
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Date") {
+                    LabeledContent("Local", value: measurement.date.formatted(date: .complete, time: .standard))
+                    LabeledContent("ISO", value: measurement.timeISO)
+                }
+                Section("Body") {
+                    LabeledContent("Weight", value: String(format: "%.2f kg", measurement.weightKg))
+                    LabeledContent("Impedance", value: "\(measurement.impedance) Ω")
+                    LabeledContent("Fat", value: String(format: "%.1f %%", measurement.fatPct))
+                    LabeledContent("Water", value: String(format: "%.1f %%", measurement.waterPct))
+                    LabeledContent("Muscle", value: String(format: "%.1f %%", measurement.musclePct))
+                    LabeledContent("Bone", value: String(format: "%.2f kg", measurement.boneKg))
+                }
+                Section("Source") {
+                    if let userName = measurement.userName, !userName.isEmpty {
+                        LabeledContent("Name", value: userName)
+                    }
+                    LabeledContent("User uid", value: measurement.uid ?? "—")
+                    LabeledContent("Timestamp", value: "\(measurement.timestamp)")
+                }
+            }
+            .navigationTitle("Measurement")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
 }
