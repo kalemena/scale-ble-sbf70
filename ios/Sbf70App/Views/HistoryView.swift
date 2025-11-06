@@ -5,6 +5,7 @@ import SwiftUI
 /// Local measurement history with Swift Charts.
 struct HistoryView: View {
     @EnvironmentObject private var appSettings: AppSettings
+    @EnvironmentObject private var session: SessionViewModel
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var measurements: [ScaleMeasurement] = []
@@ -14,6 +15,8 @@ struct HistoryView: View {
     @State private var exportURL: URL?
     @State private var pendingDeletion: ScaleMeasurement?
     @State private var detailMeasurement: ScaleMeasurement?
+    @State private var usersByUID: [String: ScaleUser] = [:]
+    @State private var showSync = false
 
     var body: some View {
         NavigationStack {
@@ -32,6 +35,13 @@ struct HistoryView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
+                        Button {
+                            showSync = true
+                        } label: {
+                            Label("Sync from Scale", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .disabled(session.client == nil || appSettings.activeUidHex == nil)
+
                         if let url = shareURL {
                             ShareLink(item: url) {
                                 Label("Export JSON", systemImage: "square.and.arrow.up")
@@ -76,7 +86,13 @@ struct HistoryView: View {
             )
         }
         .sheet(item: $detailMeasurement) { measurement in
-            MeasurementDetailSheet(measurement: measurement)
+            MeasurementDetailSheet(
+                measurement: measurement,
+                userName: usersByUID[measurement.uid ?? ""]?.name
+            )
+        }
+        .sheet(isPresented: $showSync) {
+            SyncView()
         }
     }
 
@@ -176,6 +192,8 @@ struct HistoryView: View {
             return
         }
         measurements = (try? await JsonStore.shared.loadMeasurements(uidHex: uidHex)) ?? []
+        let users = (try? await JsonStore.shared.loadUsers()) ?? []
+        usersByUID = Dictionary(uniqueKeysWithValues: users.map { ($0.uidHex, $0) })
     }
 
     private func delete(_ m: ScaleMeasurement) {
@@ -212,6 +230,7 @@ private struct CLIExportPayload: Encodable {
 /// Long-press detail sheet: every field stored for one reading.
 private struct MeasurementDetailSheet: View {
     let measurement: ScaleMeasurement
+    let userName: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -219,7 +238,6 @@ private struct MeasurementDetailSheet: View {
             List {
                 Section("Date") {
                     LabeledContent("Local", value: measurement.date.formatted(date: .complete, time: .standard))
-                    LabeledContent("ISO", value: measurement.timeISO)
                 }
                 Section("Body") {
                     LabeledContent("Weight", value: String(format: "%.2f kg", measurement.weightKg))
@@ -229,12 +247,8 @@ private struct MeasurementDetailSheet: View {
                     LabeledContent("Muscle", value: String(format: "%.1f %%", measurement.musclePct))
                     LabeledContent("Bone", value: String(format: "%.2f kg", measurement.boneKg))
                 }
-                Section("Source") {
-                    if let userName = measurement.userName, !userName.isEmpty {
-                        LabeledContent("Name", value: userName)
-                    }
-                    LabeledContent("User uid", value: measurement.uid ?? "—")
-                    LabeledContent("Timestamp", value: "\(measurement.timestamp)")
+                Section("User") {
+                    LabeledContent("User", value: userLabel)
                 }
             }
             .navigationTitle("Measurement")
@@ -246,5 +260,14 @@ private struct MeasurementDetailSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    /// e.g. "0000000000000065 · CLE" — scale stores 3-letter nicknames.
+    private var userLabel: String {
+        let uid = measurement.uid ?? measurement.userName ?? "—"
+        guard let name = userName?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {
+            return uid
+        }
+        return "\(uid) · \(name.uppercased())"
     }
 }
