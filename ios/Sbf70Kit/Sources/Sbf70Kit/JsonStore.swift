@@ -14,17 +14,20 @@ public actor JsonStore {
         public var lastDeviceName: String?
         public var activeUidHex: String?
         public var deleteAfterSync: Bool
+        public var discardNoImpedance: Bool
 
         public init(
             lastPeripheralUUID: String? = nil,
             lastDeviceName: String? = nil,
             activeUidHex: String? = nil,
-            deleteAfterSync: Bool = false
+            deleteAfterSync: Bool = false,
+            discardNoImpedance: Bool = false
         ) {
             self.lastPeripheralUUID = lastPeripheralUUID
             self.lastDeviceName = lastDeviceName
             self.activeUidHex = activeUidHex
             self.deleteAfterSync = deleteAfterSync
+            self.discardNoImpedance = discardNoImpedance
         }
     }
 

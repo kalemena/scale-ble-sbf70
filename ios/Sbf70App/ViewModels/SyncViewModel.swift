@@ -14,10 +14,12 @@ final class SyncViewModel: ObservableObject {
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var progressText: String?
     @Published var deleteAfterSync: Bool = false
+    @Published var discardNoImpedance: Bool = false
 
     func loadPreferences() async {
         let settings = (try? await JsonStore.shared.loadSettings()) ?? .init()
         deleteAfterSync = settings.deleteAfterSync
+        discardNoImpedance = settings.discardNoImpedance
     }
 
     func sync(client: SBF70Client, uidHex: String) async {
@@ -32,7 +34,7 @@ final class SyncViewModel: ObservableObject {
             // Refresh status first — also acts as a wake/liveness check.
             _ = try await client.getStatus(uid: uid)
 
-            let measurements = try await client.getSavedMeasurements(
+            let fetched = try await client.getSavedMeasurements(
                 uid: uid,
                 deleteAfter: deleteAfterSync,
                 onProgress: { [weak self] received, total in
@@ -42,11 +44,18 @@ final class SyncViewModel: ObservableObject {
                 }
             )
 
+            // Weight-only readings carry no body composition (impedance 0);
+            // optionally discard them before storing.
+            let measurements = discardNoImpedance
+                ? fetched.filter { $0.impedance > 0 }
+                : fetched
+
             progressText = measurements.isEmpty ? nil : "Saving…"
             let result = try await JsonStore.shared.mergeMeasurements(uidHex: uidHex, new: measurements)
 
             var settings = (try? await JsonStore.shared.loadSettings()) ?? .init()
             settings.deleteAfterSync = deleteAfterSync
+            settings.discardNoImpedance = discardNoImpedance
             settings.activeUidHex = uidHex
             try? await JsonStore.shared.saveSettings(settings)
 

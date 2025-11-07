@@ -35,8 +35,20 @@ struct SyncView: View {
                         }
                     }
                     .onChange(of: model.deleteAfterSync) { _, _ in
-                        Task { await model.loadPreferences() }
                         appSettings.settings.deleteAfterSync = model.deleteAfterSync
+                        Task { await appSettings.save() }
+                    }
+
+                    Toggle(isOn: $model.discardNoImpedance) {
+                        VStack(alignment: .leading) {
+                            Text("Discard measures with no impedance")
+                            Text("Skip weight-only readings that have no body composition.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .onChange(of: model.discardNoImpedance) { _, _ in
+                        appSettings.settings.discardNoImpedance = model.discardNoImpedance
                         Task { await appSettings.save() }
                     }
                 }
