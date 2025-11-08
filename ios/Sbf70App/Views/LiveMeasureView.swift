@@ -6,6 +6,7 @@ struct LiveMeasureView: View {
     @EnvironmentObject private var session: SessionViewModel
     @EnvironmentObject private var appSettings: AppSettings
     @StateObject private var model = LiveMeasureViewModel()
+    @State private var userName: String?
 
     var body: some View {
         List {
@@ -22,18 +23,23 @@ struct LiveMeasureView: View {
             }
         }
         .navigationTitle("Measure")
+        .task(id: appSettings.activeUidHex) {
+            guard let uidHex = appSettings.activeUidHex else {
+                userName = nil
+                return
+            }
+            let users = (try? await JsonStore.shared.loadUsers()) ?? []
+            userName = users.first { $0.uidHex == uidHex }?.name
+        }
     }
 
     @ViewBuilder
     private func activeUserSection(uidHex: String) -> some View {
         Section {
             HStack {
-                Label("User \(uidHex.suffix(4))", systemImage: "person")
+                Label(userDisplayName(uidHex), systemImage: "person")
                     .font(.subheadline)
                 Spacer()
-                Text("uid \(uidHex)")
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.secondary)
             }
         }
 
@@ -127,5 +133,14 @@ struct LiveMeasureView: View {
     private var client: SBF70Client {
         // Safe: this view is only rendered while the session is ready.
         session.client!
+    }
+
+    /// e.g. "CLE (000065)" — 3-letter scale nickname + last 6 hex digits of uid.
+    private func userDisplayName(_ uidHex: String) -> String {
+        let code = String(uidHex.suffix(6)).uppercased()
+        guard let name = userName?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {
+            return code
+        }
+        return "\(name.uppercased()) (\(code))"
     }
 }
