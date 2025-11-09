@@ -88,7 +88,7 @@ struct UsersView: View {
                 }
             }
             .confirmationDialog(
-                "Delete \(pendingDelete?.name ?? "") from the scale?",
+                "Delete \(pendingDelete?.displayName ?? "") from the scale?",
                 isPresented: Binding(
                     get: { pendingDelete != nil },
                     set: { if !$0 { pendingDelete = nil } }
@@ -149,7 +149,7 @@ struct UsersView: View {
                     }
                 }
                 Spacer()
-                Text(user.uidHex.suffix(6))
+                Text(user.displayName)
                     .font(.caption2.monospaced())
                     .foregroundStyle(.tertiary)
             }

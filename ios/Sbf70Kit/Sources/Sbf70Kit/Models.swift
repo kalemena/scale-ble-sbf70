@@ -60,6 +60,14 @@ public struct ScaleUser: Codable, Identifiable, Hashable, Sendable {
 
     public var id: String { uidHex }
 
+    /// e.g. "CLE (000065)" — 3-letter nickname + last 6 hex digits of the uid.
+    /// Shared display for users and measurements referencing them.
+    public var displayName: String {
+        let code = String(uidHex.suffix(6)).uppercased()
+        let nick = name.trimmingCharacters(in: .whitespaces).uppercased()
+        return nick.isEmpty ? code : "\(nick) (\(code))"
+    }
+
     public var uid: UInt64 {
         UInt64(uidHex, radix: 16) ?? 0
     }

@@ -6,7 +6,7 @@ struct LiveMeasureView: View {
     @EnvironmentObject private var session: SessionViewModel
     @EnvironmentObject private var appSettings: AppSettings
     @StateObject private var model = LiveMeasureViewModel()
-    @State private var userName: String?
+    @State private var user: ScaleUser?
 
     var body: some View {
         List {
@@ -25,11 +25,11 @@ struct LiveMeasureView: View {
         .navigationTitle("Measure")
         .task(id: appSettings.activeUidHex) {
             guard let uidHex = appSettings.activeUidHex else {
-                userName = nil
+                user = nil
                 return
             }
             let users = (try? await JsonStore.shared.loadUsers()) ?? []
-            userName = users.first { $0.uidHex == uidHex }?.name
+            user = users.first { $0.uidHex == uidHex }
         }
     }
 
@@ -135,12 +135,9 @@ struct LiveMeasureView: View {
         session.client!
     }
 
-    /// e.g. "CLE (000065)" — 3-letter scale nickname + last 6 hex digits of uid.
+    /// e.g. "CLE (000065)" — shared display (see ScaleUser.displayName).
     private func userDisplayName(_ uidHex: String) -> String {
-        let code = String(uidHex.suffix(6)).uppercased()
-        guard let name = userName?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {
-            return code
-        }
-        return "\(name.uppercased()) (\(code))"
+        if let user { return user.displayName }
+        return String(uidHex.suffix(6)).uppercased()
     }
 }

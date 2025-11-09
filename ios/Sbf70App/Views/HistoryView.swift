@@ -82,13 +82,13 @@ struct HistoryView: View {
             Text(
                 "\(measurement.date.formatted(date: .abbreviated, time: .shortened)) · "
                     + String(format: "%.2f kg", measurement.weightKg)
-                    + " will be removed from this device."
+                    + " for \(measurementUserName(measurement)) will be removed from this device."
             )
         }
         .sheet(item: $detailMeasurement) { measurement in
             MeasurementDetailSheet(
                 measurement: measurement,
-                userName: usersByUID[measurement.uid ?? ""]?.name
+                userName: measurementUserName(measurement)
             )
         }
         .sheet(isPresented: $showSync) {
@@ -196,6 +196,18 @@ struct HistoryView: View {
         usersByUID = Dictionary(uniqueKeysWithValues: users.map { ($0.uidHex, $0) })
     }
 
+    /// Same "CLE (000065)" display as the Users tab.
+    private func measurementUserName(_ m: ScaleMeasurement) -> String {
+        if let uid = m.uid, let user = usersByUID[uid] {
+            return user.displayName
+        }
+        let code = String((m.uid ?? m.userName ?? "").suffix(6)).uppercased()
+        guard let name = m.userName?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {
+            return code.isEmpty ? "Unknown user" : code
+        }
+        return "\(name.uppercased()) (\(code))"
+    }
+
     private func delete(_ m: ScaleMeasurement) {
         guard let uidHex = appSettings.activeUidHex else { return }
         Task {
@@ -262,12 +274,8 @@ private struct MeasurementDetailSheet: View {
         .presentationDetents([.medium, .large])
     }
 
-    /// e.g. "0000000000000065 · CLE" — scale stores 3-letter nicknames.
+    /// e.g. "CLE (000065)" — same display as the Users tab.
     private var userLabel: String {
-        let uid = measurement.uid ?? measurement.userName ?? "—"
-        guard let name = userName?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {
-            return uid
-        }
-        return "\(uid) · \(name.uppercased())"
+        userName ?? "—"
     }
 }
