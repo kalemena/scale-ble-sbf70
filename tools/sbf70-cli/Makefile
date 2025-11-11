@@ -3,6 +3,8 @@
 PYTHON ?= python3
 CLI = $(PYTHON) sbf70.py
 
+USER=0000000000000065
+
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
@@ -40,3 +42,6 @@ delete-unknown: ## Delete guest measurements by slot
 
 delete-user: ## Remove a user profile from the scale
 	$(CLI) delete-user $(ARGS)
+
+delete-saved-user:
+	$(CLI) delete-saved --uid $(USER) --yes
