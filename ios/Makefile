@@ -11,11 +11,16 @@
 #   make setup        # install xcodegen (if needed) + generate the Xcode project
 #   make smoke        # run the no-Xcode protocol checks (fast sanity)
 #   make build        # build the app for the simulator
-#   make archive ipa  # produce a .xcarchive and an unsigned .ipa
+#
+# Install a Release build on your own iPhone over cable (free Apple ID is fine;
+# signing lasts ~7 days, then re-run):
+#   make devices                               # find your iPhone's UDID
+#   make install DEVELOPMENT_TEAM=ABCDE12345   # build + sign + install
 
 .PHONY: help setup doctor generate open \
         kit-build kit-test smoke test \
         build build-device archive ipa \
+        devices install \
         clean distclean
 
 # ---- Configuration (override on the command line, e.g. `make build CONFIG=Release`) ----
@@ -35,6 +40,27 @@ DEVICE_REAL   ?= generic/platform=iOS
 BUILD_DIR     ?= build
 ARCHIVE_PATH  ?= $(BUILD_DIR)/$(SCHEME).xcarchive
 EXPORT_DIR    ?= $(BUILD_DIR)/ipa
+
+# ---- Code signing (device builds) ----
+#
+# Installing on your own iPhone needs your Apple ID Team ID. With a FREE Apple
+# ID (Personal Team) this works but Apple caps the signing validity at 7 DAYS —
+# the app stops launching after that until you re-run `make install`.
+#
+# Find your Team ID: Xcode > Settings > Accounts > (your Apple ID) > team, or
+# developer.apple.com > Membership. It is 10 chars, e.g. ABCDE12345.
+#
+#   make install DEVELOPMENT_TEAM=ABCDE12345
+#
+# EXPORT_METHOD: `development` works for free + paid teams (what you want here).
+#                `ad-hoc` / `release` need the paid Developer Program.
+DEVELOPMENT_TEAM ?=
+EXPORT_METHOD    ?= development
+# Bundle identifier (must match project.yml); used to launch after install.
+BUNDLE_ID        ?= org.kalemena.sbf70app
+# Target device UDID for install. Empty = the single connected device.
+DEVICE_UDID      ?=
+IPA              ?= $(EXPORT_DIR)/$(SCHEME).ipa
 
 XCODEBUILD    ?= xcodebuild
 XCODEGEN      ?= xcodegen
@@ -113,23 +139,32 @@ build-device: generate ## Build the app for a physical device (needs signing)
 		-destination '$(DEVICE_REAL)' \
 		build $(FORMAT)
 
-archive: generate ## Archive the app (Release .xcarchive)
+archive: generate ## Archive the app for a device (Release, signed — needs DEVELOPMENT_TEAM)
+	@test -n "$(DEVELOPMENT_TEAM)" || { \
+		echo "ERROR: DEVELOPMENT_TEAM is required for a device archive."; \
+		echo "       Find your Team ID in Xcode > Settings > Accounts, then:"; \
+		echo "       make archive DEVELOPMENT_TEAM=ABCDE12345"; \
+		exit 1; }
 	set -o pipefail; $(XCODEBUILD) \
 		-project $(PROJECT) \
 		-scheme $(SCHEME) \
 		-configuration Release \
 		-destination '$(DEVICE_REAL)' \
 		-archivePath $(ARCHIVE_PATH) \
+		-allowProvisioningUpdates \
+		DEVELOPMENT_TEAM=$(DEVELOPMENT_TEAM) \
+		CODE_SIGN_STYLE=Automatic \
 		archive $(FORMAT)
 
-ipa: archive ## Export an unsigned .ipa from the archive into $(EXPORT_DIR)
+ipa: archive ## Export a signed .ipa (EXPORT_METHOD=development for free teams)
 	@mkdir -p $(EXPORT_DIR)
 	@printf '%s\n' \
 		'<?xml version="1.0" encoding="UTF-8"?>' \
 		'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
 		'<plist version="1.0"><dict>' \
-		'  <key>method</key><string>development</string>' \
+		'  <key>method</key><string>$(EXPORT_METHOD)</string>' \
 		'  <key>signingStyle</key><string>automatic</string>' \
+		'  <key>teamID</key><string>$(DEVELOPMENT_TEAM)</string>' \
 		'  <key>destination</key><string>export</string>' \
 		'  <key>stripSwiftSymbols</key><true/>' \
 		'</dict></plist>' > $(BUILD_DIR)/ExportOptions.plist
@@ -137,8 +172,32 @@ ipa: archive ## Export an unsigned .ipa from the archive into $(EXPORT_DIR)
 		-exportArchive \
 		-archivePath $(ARCHIVE_PATH) \
 		-exportOptionsPlist $(BUILD_DIR)/ExportOptions.plist \
-		-exportPath $(EXPORT_DIR) $(FORMAT)
-	@echo "IPA(s) in $(EXPORT_DIR):"; ls -1 $(EXPORT_DIR)/*.ipa 2>/dev/null || echo "  (export may require valid signing — see Xcode Signing & Capabilities)"
+		-exportPath $(EXPORT_DIR) \
+		-allowProvisioningUpdates $(FORMAT)
+	@echo "IPA(s) in $(EXPORT_DIR):"; ls -1 $(EXPORT_DIR)/*.ipa 2>/dev/null \
+		|| echo "  (export failed — check signing: 'make archive DEVELOPMENT_TEAM=...')"
+
+# ---- Device install (over cable, via CoreDevice / devicectl) ----
+
+devices: ## List connected iPhones (name + UDID) for install
+	@echo "Connected devices:"
+	@xcrun devicectl list devices 2>/dev/null \
+		|| { echo "devicectl unavailable (needs Xcode 15+)."; exit 1; }
+
+install: ipa ## Build, sign, and install the Release app on a cabled iPhone
+	@IPA_FILE=$$(ls -1 $(EXPORT_DIR)/*.ipa 2>/dev/null | head -1); \
+	test -n "$$IPA_FILE" || { echo "ERROR: no .ipa to install in $(EXPORT_DIR)."; exit 1; }; \
+	if [ -n "$(DEVICE_UDID)" ]; then \
+		echo "Installing $$IPA_FILE to $(DEVICE_UDID)..."; \
+		xcrun devicectl device install app --device $(DEVICE_UDID) "$$IPA_FILE"; \
+	else \
+		echo "Installing $$IPA_FILE to the connected device..."; \
+		xcrun devicectl device install app "$$IPA_FILE"; \
+	fi
+	@echo ""
+	@echo "Installed. On the iPhone, first launch needs trust:"
+	@echo "  Settings > General > VPN & Device Management > trust your developer Apple ID."
+	@echo "NOTE: free Apple ID signing expires after ~7 days — re-run 'make install' to renew."
 
 # ---- Cleanup ----
 
