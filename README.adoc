@@ -4,3 +4,29 @@ This repository contain few script to interact with scale using bluetooth.
 The project does not want to advocate for a technology or a platform.
 Instead, goal is to enable simple operations onto the scale, and separate chain of tools for analysis.
 
+== Components
+
+* `tools/sbf70-cli/` — Python CLI (Bleak) to scan, sync history, manage users and run live measurements. See `tools/sbf70-cli/README.adoc` for the full protocol documentation.
+* `tools/measurements-report.py` — offline Chart.js HTML report from a `history` JSON export.
+* `ios/` — native SwiftUI iPhone app (SwiftUI + CoreBluetooth) implementing the same protocol. See `ios/plan.md` for architecture and status.
+
+== iOS app (quick start)
+
+[source,bash]
+----
+cd ios
+brew install xcodegen        # once
+xcodegen generate            # creates Sbf70App.xcodeproj from project.yml
+open Sbf70App.xcodeproj      # requires Xcode; run on a physical iPhone
+----
+
+Protocol/storage logic lives in the `ios/Sbf70Kit` Swift package and is
+testable on macOS without Xcode:
+
+[source,bash]
+----
+cd ios/Sbf70Kit
+swift run sbf70-smoke        # protocol checks against a mock transport
+----
+
+In Xcode, the same checks exist as an XCTest suite (`Sbf70KitTests`).
