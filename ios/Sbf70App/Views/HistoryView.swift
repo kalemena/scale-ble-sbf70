@@ -42,6 +42,11 @@ struct HistoryView: View {
                         }
                         .disabled(session.client == nil || appSettings.activeUidHex == nil)
 
+                        if let url = csvURL {
+                            ShareLink(item: url) {
+                                Label("Export CSV", systemImage: "tablecells")
+                            }
+                        }
                         if let url = shareURL {
                             ShareLink(item: url) {
                                 Label("Export JSON", systemImage: "square.and.arrow.up")
@@ -214,6 +219,23 @@ struct HistoryView: View {
             try? await JsonStore.shared.deleteMeasurement(uidHex: uidHex, timestamp: m.timestamp)
             await reload()
         }
+    }
+
+    /// CSV export matching CLI measurement fields (snake_case via CodingKeys).
+    private var csvURL: URL? {
+        guard !measurements.isEmpty, let uidHex = appSettings.activeUidHex else { return nil }
+        // Header: timestamp,time_iso,weight_kg,impedance,fat_pct,water_pct,muscle_pct,bone_kg,uid,user_name
+        var csv = "timestamp,time_iso,weight_kg,impedance,fat_pct,water_pct,muscle_pct,bone_kg,uid,user_name\n"
+        for m in measurements {
+            let uid = m.uid ?? ""
+            let user = m.userName ?? ""
+            csv += "\(m.timestamp),\(m.timeISO),\(m.weightKg),\(m.impedance),\(m.fatPct),\(m.waterPct),\(m.musclePct),\(m.boneKg),\(uid),\(user)\n"
+        }
+        let data = Data(csv.utf8)
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sbf70-history-\(uidHex).csv")
+        try? data.write(to: url, options: .atomic)
+        return url
     }
 
     /// CLI-compatible JSON for piping into tools/measurements-report.py.
