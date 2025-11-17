@@ -8,6 +8,7 @@ struct UsersView: View {
     @StateObject private var model = UsersViewModel()
     @State private var showAddForm = false
     @State private var pendingDelete: ScaleUser?
+    @State private var cachedUsers: [ScaleUser] = []
 
     var body: some View {
         NavigationStack {
@@ -30,7 +31,7 @@ struct UsersView: View {
                 if session.isReady {
                     if model.isLoading && model.users.isEmpty {
                         Section { ProgressView("Reading users from scale…") }
-                    } else if model.users.isEmpty && model.errorMessage == nil {
+                    } else if displayUsers.isEmpty && model.errorMessage == nil {
                         Section {
                             ContentUnavailableView(
                                 "No Users on Scale",
@@ -39,19 +40,27 @@ struct UsersView: View {
                             )
                         }
                     } else {
-                        Section("On the scale") {
-                            ForEach(model.users) { user in
+                        Section(session.isReady && !model.users.isEmpty ? "On the scale" : "Cached users") {
+                            ForEach(displayUsers) { user in
                                 userRow(user)
                             }
                         }
                     }
                 } else {
-                    Section {
-                        ContentUnavailableView(
-                            "Connect the Scale",
-                            systemImage: "bolt.slash",
-                            description: Text("User management needs a BLE connection. Connect from the Measure tab.")
-                        )
+                    if displayUsers.isEmpty {
+                        Section {
+                            ContentUnavailableView(
+                                "Connect the Scale",
+                                systemImage: "bolt.slash",
+                                description: Text("User management needs a BLE connection. Connect from the Measure tab, or load cached users.")
+                            )
+                        }
+                    } else {
+                        Section("Cached users") {
+                            ForEach(displayUsers) { user in
+                                userRow(user)
+                            }
+                        }
                     }
                 }
             }
@@ -104,15 +113,38 @@ struct UsersView: View {
                 Text("The profile and its saved measurements on the scale will be removed.")
             }
         }
+        .task {
+            await loadCached()
+            if let client = session.client {
+                await model.refresh(client: client)
+                await loadCached()
+            }
+        }
         .onChange(of: session.state) { _, state in
             if case .ready = state {
                 Task {
                     if let client = session.client {
                         await model.refresh(client: client)
+                        await loadCached()
                     }
                 }
             }
         }
+    }
+
+    /// Users shown: live from scale if connected and refreshed, else cached.
+    private var displayUsers: [ScaleUser] {
+        if session.isReady && !model.users.isEmpty {
+            return model.users
+        }
+        if !model.users.isEmpty {
+            return model.users
+        }
+        return cachedUsers
+    }
+
+    private func loadCached() async {
+        cachedUsers = (try? await JsonStore.shared.loadUsers()) ?? []
     }
 
     @ViewBuilder

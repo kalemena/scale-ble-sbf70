@@ -13,9 +13,8 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                connectionSection
-                userSection
-                syncSection
+            connectionSection
+            syncSection
                 dataSection
                 aboutSection
             }
@@ -68,27 +67,7 @@ struct SettingsView: View {
         }
     }
 
-    private var userSection: some View {
-        Section("Active user") {
-            if users.isEmpty {
-                Text("No cached users. Connect the scale and open the Users tab.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else {
-                Picker("User", selection: Binding(
-                    get: { appSettings.settings.activeUidHex ?? users.first?.uidHex ?? "" },
-                    set: { newValue in
-                        appSettings.settings.activeUidHex = newValue
-                        Task { await appSettings.save() }
-                    }
-                )) {
-                    ForEach(users) { user in
-                        Text("\(user.name) · \(user.year)").tag(user.uidHex)
-                    }
-                }
-            }
-        }
-    }
+
 
     private var syncSection: some View {
         Section("Sync") {
