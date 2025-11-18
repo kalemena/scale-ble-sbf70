@@ -186,7 +186,7 @@ struct UsersView: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .swipeActions {
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) {
                 pendingDelete = user
             } label: {
