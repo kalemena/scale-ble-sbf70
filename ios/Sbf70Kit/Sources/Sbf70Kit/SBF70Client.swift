@@ -384,6 +384,32 @@ public actor SBF70Client {
         return ackFrame[3] == 0
     }
 
+    /// `E7 35 <uid8> <name3> <year-1900> <month0-11> <day> <height> <sex|activity>`
+    /// — unverified layout mirroring USER_ADD (wiki suggests "same as adding user").
+    /// Waits for `E7 F0 35 status`; success = status 0.
+    public func updateUser(uid: UInt64, _ newUser: NewUser) async throws -> Bool {
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+        var nick = newUser.name.uppercased().unicodeScalars.filter { allowed.contains($0) }
+            .prefix(3).map { UInt8($0.value) }
+        while nick.count < 3 { nick.append(0) }
+
+        let sex: UInt8 = newUser.isMale ? 0x80 : 0x00
+        let activity = UInt8(min(max(newUser.activity, 1), 5))
+        let frame =
+            cmd(ScaleCmd.userUpdate, ScaleCodec.encodeUID(uid))
+            + nick
+            + [
+                UInt8(truncatingIfNeeded: newUser.birthYear - 1900),
+                UInt8(newUser.birthMonth - 1),
+                UInt8(newUser.birthDay),
+                UInt8(newUser.heightCm),
+                sex | activity,
+            ]
+        try await write(frame)
+        let ackFrame = try await waitScaleAck(for: ScaleCmd.userUpdate)
+        return ackFrame[3] == 0
+    }
+
     /// Pick the next free remote uid: max(existing, 100) + 1 (openScale rule).
     public static func nextRemoteUID(existing: [ScaleUser]) -> UInt64 {
         var maxUID: UInt64 = 100

@@ -8,6 +8,7 @@ struct UsersView: View {
     @StateObject private var model = UsersViewModel()
     @State private var showAddForm = false
     @State private var pendingDelete: ScaleUser?
+    @State private var editUser: ScaleUser?
     @State private var cachedUsers: [ScaleUser] = []
 
     var body: some View {
@@ -112,6 +113,34 @@ struct UsersView: View {
             } message: {
                 Text("The profile and its saved measurements on the scale will be removed.")
             }
+            .sheet(isPresented: Binding(
+                get: { editUser != nil },
+                set: { if !$0 { editUser = nil } }
+            )) {
+                if let user = editUser {
+                    UserEditSheet(user: user) { newUser in
+                        editUser = nil
+                        Task { @MainActor in
+                            guard let client = session.client else { return }
+                            do {
+                                try await client.initSession()
+                                let ok = try await client.updateUser(uid: user.uid, newUser)
+                                if ok {
+                                    model.noticeMessage = "Updated \(newUser.name.uppercased()) on the scale."
+                                    model.errorMessage = nil
+                                    await model.refresh(client: client)
+                                } else {
+                                    model.errorMessage = "Scale rejected the user update (status != 0)."
+                                    model.noticeMessage = nil
+                                }
+                            } catch {
+                                model.errorMessage = error.localizedDescription
+                                model.noticeMessage = nil
+                            }
+                        }
+                    }
+                }
+            }
         }
         .task {
             await loadCached()
@@ -187,6 +216,12 @@ struct UsersView: View {
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button {
+                editUser = user
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(.blue)
             Button(role: .destructive) {
                 pendingDelete = user
             } label: {
@@ -260,6 +295,72 @@ private struct AddUserForm: View {
                                 activity: activity
                             )
                         )
+                        dismiss()
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+}
+
+/// Edit user using same frame layout as addUser (CMD 0x35).
+private struct UserEditSheet: View {
+    let user: ScaleUser
+    let onSubmit: (SBF70Client.NewUser) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+    @State private var birthDate: Date
+    @State private var heightCm: Int
+    @State private var isMale: Bool
+    @State private var activity: Int
+
+    init(user: ScaleUser, onSubmit: @escaping (SBF70Client.NewUser) -> Void) {
+        self.user = user
+        self.onSubmit = onSubmit
+        _name = State(initialValue: String(user.name.prefix(3)).uppercased())
+        var comps = DateComponents()
+        if user.year > 0 { comps.year = user.year }
+        comps.month = 1
+        comps.day = 1
+        _birthDate = State(initialValue: Calendar.current.date(from: comps) ?? Date(timeIntervalSince1970: 631152000))
+        _heightCm = State(initialValue: 170)
+        _isMale = State(initialValue: true)
+        _activity = State(initialValue: 3)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Nickname (3 chars)", text: $name)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                }
+                Section("Profile") {
+                    DatePicker("Birthday", selection: $birthDate, displayedComponents: .date)
+                    Stepper(value: $heightCm, in: 100...220) { Text("Height: \(heightCm) cm") }
+                    Picker("Sex", selection: $isMale) {
+                        Text("Male").tag(true)
+                        Text("Female").tag(false)
+                    }
+                    Picker("Activity", selection: $activity) {
+                        Text("1").tag(1); Text("2").tag(2); Text("3").tag(3); Text("4").tag(4); Text("5").tag(5)
+                    }
+                }
+            }
+            .navigationTitle("Edit User")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        let c = Calendar.current
+                        let comps = c.dateComponents([.year, .month, .day], from: birthDate)
+                        onSubmit(SBF70Client.NewUser(name: name, birthYear: comps.year ?? 1990, birthMonth: comps.month ?? 1, birthDay: comps.day ?? 1, heightCm: heightCm, isMale: isMale, activity: activity))
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
