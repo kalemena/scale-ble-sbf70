@@ -118,7 +118,7 @@ struct UsersView: View {
                 set: { if !$0 { editUser = nil } }
             )) {
                 if let user = editUser {
-                    UserEditSheet(user: user) { newUser in
+                    UserEditSheet(user: model.details[user.uidHex] ?? user) { newUser in
                         editUser = nil
                         Task { @MainActor in
                             guard let client = session.client else { return }
@@ -139,6 +139,7 @@ struct UsersView: View {
                             }
                         }
                     }
+                    .id(user.uidHex)
                 }
             }
         }
@@ -321,13 +322,24 @@ private struct UserEditSheet: View {
         self.onSubmit = onSubmit
         _name = State(initialValue: String(user.name.prefix(3)).uppercased())
         var comps = DateComponents()
-        if user.year > 0 { comps.year = user.year }
-        comps.month = 1
-        comps.day = 1
+        comps.year = user.year > 0 ? user.year : 1990
+        if let b = user.birthday {
+            let p = b.split(separator: "-")
+            if p.count == 3 {
+                comps.month = Int(p[1]) ?? 1
+                comps.day = Int(p[2]) ?? 1
+            } else {
+                comps.month = 1
+                comps.day = 1
+            }
+        } else {
+            comps.month = 1
+            comps.day = 1
+        }
         _birthDate = State(initialValue: Calendar.current.date(from: comps) ?? Date(timeIntervalSince1970: 631152000))
-        _heightCm = State(initialValue: 170)
-        _isMale = State(initialValue: true)
-        _activity = State(initialValue: 3)
+        _heightCm = State(initialValue: user.heightCm ?? 170)
+        _isMale = State(initialValue: user.sex?.lowercased() == "male")
+        _activity = State(initialValue: user.activity ?? 3)
     }
 
     var body: some View {
