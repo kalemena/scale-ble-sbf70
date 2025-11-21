@@ -179,7 +179,7 @@ struct UsersView: View {
 
     @ViewBuilder
     private func userRow(_ user: ScaleUser) -> some View {
-        let detail = model.details[user.uidHex]
+        let detail = model.details[user.uidHex] ?? user
         Button {
             appSettings.settings.activeUidHex = user.uidHex
             Task { await appSettings.save() }
@@ -195,20 +195,14 @@ struct UsersView: View {
                                 .foregroundStyle(.tint)
                         }
                     }
-                    if let detail {
-                        Text([
-                            "\(user.year)",
-                            detail.birthday ?? "",
-                            detail.heightCm.map { "\($0) cm" } ?? "",
-                            detail.sex ?? "",
-                        ].filter { !$0.isEmpty }.joined(separator: " · "))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("\(user.year)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text([
+                        "\(user.year)",
+                        detail.birthday ?? "",
+                        detail.heightCm.map { "\($0) cm" } ?? "",
+                        detail.sex ?? "",
+                    ].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text(user.displayName)

@@ -18,16 +18,22 @@ final class UsersViewModel: ObservableObject {
             try await client.initSession() // stale sessions time out (see SBF70Client.initSession)
             let listed = try await client.listUsers()
             var detailed: [String: ScaleUser] = [:]
+            var profiles: [ScaleUser] = []
+            profiles.reserveCapacity(listed.count)
             for user in listed {
-                if let full = try? await client.userDetails(uid: user.uid) {
-                    detailed[user.uidHex] = full
-                } else {
-                    detailed[user.uidHex] = user
-                }
+                let full = (try? await client.userDetails(uid: user.uid)) ?? user
+                detailed[user.uidHex] = full
+
+                var merged = user
+                merged.birthday = full.birthday
+                merged.heightCm = full.heightCm
+                merged.sex = full.sex
+                merged.activity = full.activity
+                profiles.append(merged)
             }
-            users = listed
+            users = profiles
             details = detailed
-            try await JsonStore.shared.saveUsers(listed)
+            try await JsonStore.shared.saveUsers(profiles)
         } catch {
             errorMessage = error.localizedDescription
         }
