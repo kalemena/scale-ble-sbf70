@@ -17,6 +17,7 @@ targets:
       - Sbf70App
     dependencies:
       - package: Sbf70Kit
+        product: Sbf70Kit
     info:
       path: Sbf70App/Info.plist
       properties:
