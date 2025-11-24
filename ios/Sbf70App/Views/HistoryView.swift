@@ -67,6 +67,11 @@ struct HistoryView: View {
         .onChange(of: appSettings.activeUidHex) { _, _ in
             Task { await reload() }
         }
+        .onChange(of: session.state) { _, state in
+            if case .ready = state {
+                Task { await reload() }
+            }
+        }
         .confirmationDialog(
             "Delete measurement?",
             isPresented: Binding(
@@ -93,7 +98,8 @@ struct HistoryView: View {
         .sheet(item: $detailMeasurement) { measurement in
             MeasurementDetailSheet(
                 measurement: measurement,
-                userName: measurementUserName(measurement)
+                userName: measurementUserName(measurement),
+                bmi: bmi(for: measurement)
             )
         }
         .sheet(isPresented: $showSync) {
@@ -185,20 +191,43 @@ struct HistoryView: View {
                     .font(.subheadline.weight(.medium))
                     .monospacedDigit()
             }
-            Text(String(format: "fat %.1f%% · water %.1f%% · muscle %.1f%% · Z %dΩ", m.fatPct, m.waterPct, m.musclePct, m.impedance))
+            Text(summaryText(for: m))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
     }
 
+    private func summaryText(for m: ScaleMeasurement) -> String {
+        var parts = [
+            String(format: "fat %.1f%%", m.fatPct),
+            String(format: "water %.1f%%", m.waterPct),
+            String(format: "muscle %.1f%%", m.musclePct),
+            "Z \(m.impedance)Ω",
+        ]
+        if let bmi = bmi(for: m) {
+            parts.append(String(format: "BMI %.1f", bmi))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func bmi(for m: ScaleMeasurement) -> Double? {
+        let heightCm =
+            m.uid.flatMap { usersByUID[$0]?.heightCm }
+            ?? appSettings.activeUidHex.flatMap { usersByUID[$0]?.heightCm }
+        guard let heightCm, heightCm > 0 else { return nil }
+        return HealthMetrics.bmi(weightKg: m.weightKg, heightCm: Double(heightCm))
+    }
+
     private func reload() async {
+        // Load the cached users first so BMI is available on the first render.
+        let users = (try? await JsonStore.shared.loadUsers()) ?? []
+        usersByUID = Dictionary(uniqueKeysWithValues: users.map { ($0.uidHex, $0) })
+
         guard let uidHex = appSettings.activeUidHex else {
             measurements = []
             return
         }
         measurements = (try? await JsonStore.shared.loadMeasurements(uidHex: uidHex)) ?? []
-        let users = (try? await JsonStore.shared.loadUsers()) ?? []
-        usersByUID = Dictionary(uniqueKeysWithValues: users.map { ($0.uidHex, $0) })
     }
 
     /// Same "CLE (000065)" display as the Users tab.
@@ -265,6 +294,7 @@ private struct CLIExportPayload: Encodable {
 private struct MeasurementDetailSheet: View {
     let measurement: ScaleMeasurement
     let userName: String?
+    let bmi: Double?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -275,6 +305,9 @@ private struct MeasurementDetailSheet: View {
                 }
                 Section("Body") {
                     LabeledContent("Weight", value: String(format: "%.2f kg", measurement.weightKg))
+                    if let bmi {
+                        LabeledContent("BMI", value: String(format: "%.1f", bmi))
+                    }
                     LabeledContent("Impedance", value: "\(measurement.impedance) Ω")
                     LabeledContent("Fat", value: String(format: "%.1f %%", measurement.fatPct))
                     LabeledContent("Water", value: String(format: "%.1f %%", measurement.waterPct))
