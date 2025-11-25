@@ -198,16 +198,13 @@ struct HistoryView: View {
     }
 
     private func summaryText(for m: ScaleMeasurement) -> String {
-        var parts = [
+        let bmiText = bmi(for: m).map { String(format: "BMI %.1f", $0) } ?? "BMI —"
+        return [
+            bmiText,
             String(format: "fat %.1f%%", m.fatPct),
             String(format: "water %.1f%%", m.waterPct),
             String(format: "muscle %.1f%%", m.musclePct),
-            "Z \(m.impedance)Ω",
-        ]
-        if let bmi = bmi(for: m) {
-            parts.append(String(format: "BMI %.1f", bmi))
-        }
-        return parts.joined(separator: " · ")
+        ].joined(separator: " · ")
     }
 
     private func bmi(for m: ScaleMeasurement) -> Double? {
@@ -308,11 +305,11 @@ private struct MeasurementDetailSheet: View {
                     if let bmi {
                         LabeledContent("BMI", value: String(format: "%.1f", bmi))
                     }
-                    LabeledContent("Impedance", value: "\(measurement.impedance) Ω")
                     LabeledContent("Fat", value: String(format: "%.1f %%", measurement.fatPct))
                     LabeledContent("Water", value: String(format: "%.1f %%", measurement.waterPct))
                     LabeledContent("Muscle", value: String(format: "%.1f %%", measurement.musclePct))
                     LabeledContent("Bone", value: String(format: "%.2f kg", measurement.boneKg))
+                    LabeledContent("Impedance", value: "\(measurement.impedance) Ω")
                 }
                 Section("User") {
                     LabeledContent("User", value: userLabel)
