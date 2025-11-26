@@ -24,13 +24,22 @@ struct LiveMeasureView: View {
         }
         .navigationTitle("Measure")
         .task(id: appSettings.activeUidHex) {
-            guard let uidHex = appSettings.activeUidHex else {
-                user = nil
-                return
-            }
-            let users = (try? await JsonStore.shared.loadUsers()) ?? []
-            user = users.first { $0.uidHex == uidHex }
+            await loadUser()
         }
+        .onChange(of: session.state) { _, state in
+            if case .ready = state {
+                Task { await loadUser() }
+            }
+        }
+    }
+
+    private func loadUser() async {
+        guard let uidHex = appSettings.activeUidHex else {
+            user = nil
+            return
+        }
+        let users = (try? await JsonStore.shared.loadUsers()) ?? []
+        user = users.first { $0.uidHex == uidHex }
     }
 
     @ViewBuilder
@@ -107,11 +116,12 @@ struct LiveMeasureView: View {
     private func resultSection(_ result: ScaleMeasurement) -> some View {
         Section("Measurement") {
             metricRow("Weight", value: String(format: "%.2f kg", result.weightKg))
-            metricRow("Impedance", value: "\(result.impedance) Ω")
+            metricRow("BMI", value: bmi(for: result).map { String(format: "%.1f", $0) } ?? "—")
             metricRow("Fat", value: String(format: "%.1f %%", result.fatPct))
             metricRow("Water", value: String(format: "%.1f %%", result.waterPct))
             metricRow("Muscle", value: String(format: "%.1f %%", result.musclePct))
             metricRow("Bone", value: String(format: "%.2f kg", result.boneKg))
+            metricRow("Impedance", value: "\(result.impedance) Ω")
             if model.saved {
                 Label("Saved to history", systemImage: "checkmark.circle")
                     .foregroundStyle(.green)
@@ -139,5 +149,10 @@ struct LiveMeasureView: View {
     private func userDisplayName(_ uidHex: String) -> String {
         if let user { return user.displayName }
         return String(uidHex.suffix(6)).uppercased()
+    }
+
+    private func bmi(for measurement: ScaleMeasurement) -> Double? {
+        guard let heightCm = user?.heightCm, heightCm > 0 else { return nil }
+        return HealthMetrics.bmi(weightKg: measurement.weightKg, heightCm: Double(heightCm))
     }
 }
