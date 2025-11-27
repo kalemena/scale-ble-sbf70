@@ -14,4 +14,11 @@ final class HealthMetricsTests: XCTestCase {
         XCTAssertNil(HealthMetrics.bmi(weightKg: .nan, heightCm: 175))
         XCTAssertNil(HealthMetrics.bmi(weightKg: 70, heightCm: .infinity))
     }
+
+    func testBMIStatusThresholds() {
+        XCTAssertEqual(HealthMetrics.bmiStatus(18.4), .below)
+        XCTAssertEqual(HealthMetrics.bmiStatus(18.5), .ok)
+        XCTAssertEqual(HealthMetrics.bmiStatus(24.9), .ok)
+        XCTAssertEqual(HealthMetrics.bmiStatus(25), .above)
+    }
 }

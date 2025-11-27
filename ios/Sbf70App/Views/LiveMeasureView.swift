@@ -115,13 +115,13 @@ struct LiveMeasureView: View {
     @ViewBuilder
     private func resultSection(_ result: ScaleMeasurement) -> some View {
         Section("Measurement") {
-            metricRow("Weight", value: String(format: "%.2f kg", result.weightKg))
-            metricRow("BMI", value: bmi(for: result).map { String(format: "%.1f", $0) } ?? "—")
-            metricRow("Fat", value: String(format: "%.1f %%", result.fatPct))
-            metricRow("Water", value: String(format: "%.1f %%", result.waterPct))
-            metricRow("Muscle", value: String(format: "%.1f %%", result.musclePct))
-            metricRow("Bone", value: String(format: "%.2f kg", result.boneKg))
-            metricRow("Impedance", value: "\(result.impedance) Ω")
+            metricRow("Weight", icon: "scalemass.fill", value: String(format: "%.2f kg", result.weightKg))
+            bmiRow(result)
+            metricRow("Fat", icon: "pizza.slice", value: String(format: "%.1f %%", result.fatPct))
+            metricRow("Water", icon: "humidity.fill", value: String(format: "%.1f %%", result.waterPct))
+            metricRow("Muscle", icon: "dumbbell.fill", value: String(format: "%.1f %%", result.musclePct))
+            metricRow("Bone", icon: "figure.walk", value: String(format: "%.2f kg", result.boneKg))
+            metricRow("Impedance", icon: "bolt.fill", value: "\(result.impedance) Ω")
             if model.saved {
                 Label("Saved to history", systemImage: "checkmark.circle")
                     .foregroundStyle(.green)
@@ -130,9 +130,38 @@ struct LiveMeasureView: View {
         }
     }
 
-    private func metricRow(_ label: String, value: String) -> some View {
+    @ViewBuilder
+    private func bmiRow(_ result: ScaleMeasurement) -> some View {
+        let bmiInfo = bmiInfo(for: result)
+        metricRow("BMI", icon: bmiInfo.icon, value: bmiInfo.text, iconColor: bmiInfo.color)
+    }
+
+    private func bmiInfo(for measurement: ScaleMeasurement) -> BMIInfo {
+        guard let bmi = bmi(for: measurement) else {
+            return BMIInfo(icon: "gauge.with.dots.needle.50percent", color: .secondary, text: "—")
+        }
+        let icon: String
+        let color: Color
+        switch HealthMetrics.bmiStatus(bmi) {
+        case .below:
+            icon = "gauge.with.dots.needle.33percent"
+            color = .orange
+        case .ok:
+            icon = "gauge.with.dots.needle.50percent"
+            color = .green
+        case .above:
+            icon = "gauge.with.dots.needle.67percent"
+            color = .red
+        }
+        return BMIInfo(icon: icon, color: color, text: String(format: "%.1f", bmi))
+    }
+
+    private func metricRow(_ label: String, icon: String, value: String, iconColor: Color = .secondary) -> some View {
         HStack {
-            Text(label)
+            Image(systemName: icon)
+                .frame(width: 24, alignment: .leading)
+                .foregroundStyle(iconColor)
+                .accessibilityLabel(label)
             Spacer()
             Text(value)
                 .monospacedDigit()
@@ -154,5 +183,11 @@ struct LiveMeasureView: View {
     private func bmi(for measurement: ScaleMeasurement) -> Double? {
         guard let heightCm = user?.heightCm, heightCm > 0 else { return nil }
         return HealthMetrics.bmi(weightKg: measurement.weightKg, heightCm: Double(heightCm))
+    }
+
+    private struct BMIInfo {
+        let icon: String
+        let color: Color
+        let text: String
     }
 }
