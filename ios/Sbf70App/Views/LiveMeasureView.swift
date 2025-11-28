@@ -137,36 +137,11 @@ struct LiveMeasureView: View {
     }
 
     private func bmiInfo(for measurement: ScaleMeasurement) -> BMIInfo {
-        guard let bmi = bmi(for: measurement) else {
-            return BMIInfo(icon: "gauge.with.dots.needle.50percent", color: .secondary, text: "—")
-        }
-        let icon: String
-        let color: Color
-        switch HealthMetrics.bmiStatus(bmi) {
-        case .below:
-            icon = "gauge.with.dots.needle.33percent"
-            color = .orange
-        case .ok:
-            icon = "gauge.with.dots.needle.50percent"
-            color = .green
-        case .above:
-            icon = "gauge.with.dots.needle.67percent"
-            color = .red
-        }
-        return BMIInfo(icon: icon, color: color, text: String(format: "%.1f", bmi))
+        BMIInfo(bmi: bmi(for: measurement))
     }
 
     private func metricRow(_ label: String, icon: String, value: String, iconColor: Color = .secondary) -> some View {
-        HStack {
-            Image(systemName: icon)
-                .frame(width: 24, alignment: .leading)
-                .foregroundStyle(iconColor)
-                .accessibilityLabel(label)
-            Spacer()
-            Text(value)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-        }
+        MetricRow(label: label, icon: icon, value: value, iconColor: iconColor)
     }
 
     private var client: SBF70Client {
@@ -184,10 +159,54 @@ struct LiveMeasureView: View {
         guard let heightCm = user?.heightCm, heightCm > 0 else { return nil }
         return HealthMetrics.bmi(weightKg: measurement.weightKg, heightCm: Double(heightCm))
     }
+}
 
-    private struct BMIInfo {
-        let icon: String
-        let color: Color
-        let text: String
+/// One measurement row: icon + label on the left, value on the right.
+struct MetricRow: View {
+    let label: String
+    let icon: String
+    let value: String
+    var iconColor: Color = .secondary
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .frame(width: 24, alignment: .leading)
+                .foregroundStyle(iconColor)
+                .accessibilityHidden(true)
+            Text(label)
+            Spacer()
+            Text(value)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Icon, color, and formatted text for a BMI value.
+struct BMIInfo {
+    let icon: String
+    let color: Color
+    let text: String
+
+    init(bmi: Double?) {
+        guard let bmi else {
+            icon = "gauge.with.dots.needle.50percent"
+            color = .secondary
+            text = "—"
+            return
+        }
+        text = String(format: "%.1f", bmi)
+        switch HealthMetrics.bmiStatus(bmi) {
+        case .below:
+            icon = "gauge.with.dots.needle.33percent"
+            color = .orange
+        case .ok:
+            icon = "gauge.with.dots.needle.50percent"
+            color = .green
+        case .above:
+            icon = "gauge.with.dots.needle.67percent"
+            color = .red
+        }
     }
 }

@@ -301,15 +301,37 @@ private struct MeasurementDetailSheet: View {
                     LabeledContent("Local", value: measurement.date.formatted(date: .complete, time: .standard))
                 }
                 Section("Body") {
-                    LabeledContent("Weight", value: String(format: "%.2f kg", measurement.weightKg))
-                    if let bmi {
-                        LabeledContent("BMI", value: String(format: "%.1f", bmi))
-                    }
-                    LabeledContent("Fat", value: String(format: "%.1f %%", measurement.fatPct))
-                    LabeledContent("Water", value: String(format: "%.1f %%", measurement.waterPct))
-                    LabeledContent("Muscle", value: String(format: "%.1f %%", measurement.musclePct))
-                    LabeledContent("Bone", value: String(format: "%.2f kg", measurement.boneKg))
-                    LabeledContent("Impedance", value: "\(measurement.impedance) Ω")
+                    MetricRow(
+                        label: "Weight",
+                        icon: "scalemass.fill",
+                        value: String(format: "%.2f kg", measurement.weightKg)
+                    )
+                    MetricRow(label: "BMI", icon: bmiInfo.icon, value: bmiInfo.text, iconColor: bmiInfo.color)
+                    MetricRow(
+                        label: "Fat",
+                        icon: "pizza.slice",
+                        value: String(format: "%.1f %%", measurement.fatPct)
+                    )
+                    MetricRow(
+                        label: "Water",
+                        icon: "humidity.fill",
+                        value: String(format: "%.1f %%", measurement.waterPct)
+                    )
+                    MetricRow(
+                        label: "Muscle",
+                        icon: "dumbbell.fill",
+                        value: String(format: "%.1f %%", measurement.musclePct)
+                    )
+                    MetricRow(
+                        label: "Bone",
+                        icon: "figure.walk",
+                        value: String(format: "%.2f kg", measurement.boneKg)
+                    )
+                    MetricRow(
+                        label: "Impedance",
+                        icon: "bolt.fill",
+                        value: "\(measurement.impedance) Ω"
+                    )
                 }
                 Section("User") {
                     LabeledContent("User", value: userLabel)
@@ -329,5 +351,9 @@ private struct MeasurementDetailSheet: View {
     /// e.g. "CLE (000065)" — same display as the Users tab.
     private var userLabel: String {
         userName ?? "—"
+    }
+
+    private var bmiInfo: BMIInfo {
+        BMIInfo(bmi: bmi)
     }
 }
