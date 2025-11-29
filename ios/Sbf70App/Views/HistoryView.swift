@@ -191,20 +191,33 @@ struct HistoryView: View {
                     .font(.subheadline.weight(.medium))
                     .monospacedDigit()
             }
-            Text(summaryText(for: m))
+            summaryBar(for: m)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
         }
     }
 
-    private func summaryText(for m: ScaleMeasurement) -> String {
-        let bmiText = bmi(for: m).map { String(format: "BMI %.1f", $0) } ?? "BMI —"
-        return [
-            bmiText,
-            String(format: "fat %.1f%%", m.fatPct),
-            String(format: "water %.1f%%", m.waterPct),
-            String(format: "muscle %.1f%%", m.musclePct),
-        ].joined(separator: " · ")
+    @ViewBuilder
+    private func summaryBar(for m: ScaleMeasurement) -> some View {
+        let bmiInfo = BMIInfo(bmi: bmi(for: m))
+        HStack(spacing: 12) {
+            summaryItem(icon: bmiInfo.icon, value: bmiInfo.text, color: bmiInfo.color, label: "BMI")
+            summaryItem(icon: "pizza.slice", value: String(format: "%.1f%%", m.fatPct), label: "Fat")
+            summaryItem(icon: "humidity.fill", value: String(format: "%.1f%%", m.waterPct), label: "Water")
+            summaryItem(icon: "dumbbell.fill", value: String(format: "%.1f%%", m.musclePct), label: "Muscle")
+        }
+        .foregroundStyle(.secondary)
+    }
+
+    private func summaryItem(icon: String, value: String, color: Color = .secondary, label: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .foregroundStyle(color)
+                .accessibilityHidden(true)
+            Text(value)
+                .monospacedDigit()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label) \(value)")
     }
 
     private func bmi(for m: ScaleMeasurement) -> Double? {
