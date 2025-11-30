@@ -204,6 +204,7 @@ struct HistoryView: View {
             summaryItem(icon: "pizza.slice", value: String(format: "%.1f%%", m.fatPct), label: "Fat")
             summaryItem(icon: "humidity.fill", value: String(format: "%.1f%%", m.waterPct), label: "Water")
             summaryItem(icon: "dumbbell.fill", value: String(format: "%.1f%%", m.musclePct), label: "Muscle")
+            summaryItem(icon: "figure.walk", value: String(format: "%.2f kg", m.boneKg), label: "Bone")
         }
         .foregroundStyle(.secondary)
     }
