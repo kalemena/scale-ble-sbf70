@@ -12,6 +12,7 @@ struct HistoryView: View {
     @State private var showFat = true
     @State private var showWater = false
     @State private var showMuscle = false
+    @State private var showBonePct = false
     @State private var exportURL: URL?
     @State private var pendingDeletion: ScaleMeasurement?
     @State private var detailMeasurement: ScaleMeasurement?
@@ -114,11 +115,16 @@ struct HistoryView: View {
                     .frame(height: 220)
                     .listRowInsets(EdgeInsets(top: 8, leading: 4, bottom: 8, trailing: 4))
 
-                HStack(spacing: 12) {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 74), spacing: 8)],
+                    alignment: .leading,
+                    spacing: 6
+                ) {
                     toggleChip("Weight", isOn: .constant(true), color: .blue)
                     toggleChip("Fat %", isOn: $showFat, color: .orange)
                     toggleChip("Water %", isOn: $showWater, color: .cyan)
                     toggleChip("Muscle %", isOn: $showMuscle, color: .green)
+                    toggleChip("Bone %", isOn: $showBonePct, color: .pink)
                 }
                 .font(.caption)
             }
@@ -143,7 +149,13 @@ struct HistoryView: View {
     }
 
     private var chart: some View {
-        Chart(measurements) { m in
+        let weightDomain = weightRange
+        let percentDomain = 0.0...100.0
+        let percentTickPositions = [0.0, 20.0, 40.0, 60.0, 80.0, 100.0].map {
+            chartY(forPercent: $0, weightRange: weightDomain, percentRange: percentDomain)
+        }
+
+        return Chart(measurements) { m in
             LineMark(x: .value("Date", m.date), y: .value("Weight", m.weightKg))
                 .foregroundStyle(.blue)
                 .interpolationMethod(.monotone)
@@ -151,24 +163,102 @@ struct HistoryView: View {
                 .foregroundStyle(.blue)
 
             if showFat {
-                LineMark(x: .value("Date", m.date), y: .value("Fat %", m.fatPct), series: .value("Metric", "Fat %"))
-                    .foregroundStyle(.orange)
-                    .interpolationMethod(.monotone)
+                LineMark(
+                    x: .value("Date", m.date),
+                    y: .value("Fat %", chartY(forPercent: m.fatPct, weightRange: weightDomain, percentRange: percentDomain)),
+                    series: .value("Metric", "Fat %")
+                )
+                .foregroundStyle(.orange)
+                .interpolationMethod(.monotone)
             }
             if showWater {
-                LineMark(x: .value("Date", m.date), y: .value("Water %", m.waterPct), series: .value("Metric", "Water %"))
-                    .foregroundStyle(.cyan)
-                    .interpolationMethod(.monotone)
+                LineMark(
+                    x: .value("Date", m.date),
+                    y: .value("Water %", chartY(forPercent: m.waterPct, weightRange: weightDomain, percentRange: percentDomain)),
+                    series: .value("Metric", "Water %")
+                )
+                .foregroundStyle(.cyan)
+                .interpolationMethod(.monotone)
             }
             if showMuscle {
-                LineMark(x: .value("Date", m.date), y: .value("Muscle %", m.musclePct), series: .value("Metric", "Muscle %"))
-                    .foregroundStyle(.green)
-                    .interpolationMethod(.monotone)
+                LineMark(
+                    x: .value("Date", m.date),
+                    y: .value("Muscle %", chartY(forPercent: m.musclePct, weightRange: weightDomain, percentRange: percentDomain)),
+                    series: .value("Metric", "Muscle %")
+                )
+                .foregroundStyle(.green)
+                .interpolationMethod(.monotone)
+            }
+            if showBonePct, let bonePct = bonePercent(for: m) {
+                LineMark(
+                    x: .value("Date", m.date),
+                    y: .value("Bone %", chartY(forPercent: bonePct, weightRange: weightDomain, percentRange: percentDomain)),
+                    series: .value("Metric", "Bone %")
+                )
+                .foregroundStyle(.pink)
+                .interpolationMethod(.monotone)
             }
         }
+        .chartYScale(domain: weightDomain)
         .chartYAxis {
-            AxisMarks(position: .leading)
+            AxisMarks(position: .leading) { value in
+                AxisGridLine()
+                AxisTick()
+                AxisValueLabel {
+                    if let kg = value.as(Double.self) {
+                        Text(String(format: "%.1f kg", kg))
+                    }
+                }
+            }
+            AxisMarks(position: .trailing, values: percentTickPositions) { value in
+                AxisTick()
+                AxisValueLabel {
+                    if let y = value.as(Double.self) {
+                        let pct = percentValue(atY: y, weightRange: weightDomain, percentRange: percentDomain)
+                        Text(String(format: "%.0f%%", pct))
+                    }
+                }
+            }
         }
+    }
+
+    private func bonePercent(for measurement: ScaleMeasurement) -> Double? {
+        guard measurement.weightKg > 0 else { return nil }
+        return measurement.boneKg / measurement.weightKg * 100
+    }
+
+    /// Weight axis domain with a little breathing room above and below.
+    private var weightRange: ClosedRange<Double> {
+        let weights = measurements.map(\.weightKg)
+        guard let minWeight = weights.min(), let maxWeight = weights.max() else { return 0...100 }
+        let span = max(maxWeight - minWeight, 1.0)
+        let mid = (minWeight + maxWeight) / 2
+        let padding = span * 0.1
+        return (mid - span / 2 - padding)...(mid + span / 2 + padding)
+    }
+
+    /// Map a percentage onto the chart's weight-based y scale.
+    private func chartY(
+        forPercent percent: Double,
+        weightRange: ClosedRange<Double>,
+        percentRange: ClosedRange<Double>
+    ) -> Double {
+        let percentSpan = percentRange.upperBound - percentRange.lowerBound
+        guard percentSpan > 0 else { return weightRange.lowerBound }
+        let fraction = (percent - percentRange.lowerBound) / percentSpan
+        return weightRange.lowerBound + fraction * (weightRange.upperBound - weightRange.lowerBound)
+    }
+
+    /// Inverse of `chartY(forPercent:...)` for the trailing percentage axis.
+    private func percentValue(
+        atY y: Double,
+        weightRange: ClosedRange<Double>,
+        percentRange: ClosedRange<Double>
+    ) -> Double {
+        let weightSpan = weightRange.upperBound - weightRange.lowerBound
+        guard weightSpan > 0 else { return percentRange.lowerBound }
+        let fraction = (y - weightRange.lowerBound) / weightSpan
+        return percentRange.lowerBound + fraction * (percentRange.upperBound - percentRange.lowerBound)
     }
 
     private func toggleChip(_ label: String, isOn: Binding<Bool>, color: Color) -> some View {
