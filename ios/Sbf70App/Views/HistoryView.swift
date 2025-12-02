@@ -14,7 +14,6 @@ struct HistoryView: View {
     @State private var showMuscle = false
     @State private var showBonePct = false
     @State private var exportURL: URL?
-    @State private var pendingDeletion: ScaleMeasurement?
     @State private var detailMeasurement: ScaleMeasurement?
     @State private var usersByUID: [String: ScaleUser] = [:]
     @State private var showSync = false
@@ -73,29 +72,6 @@ struct HistoryView: View {
                 Task { await reload() }
             }
         }
-        .confirmationDialog(
-            "Delete measurement?",
-            isPresented: Binding(
-                get: { pendingDeletion != nil },
-                set: { if !$0 { pendingDeletion = nil } }
-            ),
-            titleVisibility: .visible,
-            presenting: pendingDeletion
-        ) { measurement in
-            Button("Delete", role: .destructive) {
-                delete(measurement)
-                pendingDeletion = nil
-            }
-            Button("Cancel", role: .cancel) {
-                pendingDeletion = nil
-            }
-        } message: { measurement in
-            Text(
-                "\(measurement.date.formatted(date: .abbreviated, time: .shortened)) · "
-                    + String(format: "%.2f kg", measurement.weightKg)
-                    + " for \(measurementUserName(measurement)) will be removed from this device."
-            )
-        }
         .sheet(item: $detailMeasurement) { measurement in
             MeasurementDetailSheet(
                 measurement: measurement,
@@ -138,7 +114,7 @@ struct HistoryView: View {
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
-                                pendingDeletion = measurement
+                                delete(measurement)
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
