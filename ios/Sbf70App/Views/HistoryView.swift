@@ -109,7 +109,7 @@ struct HistoryView: View {
                 ForEach(measurements.reversed()) { measurement in
                     row(measurement)
                         .contentShape(Rectangle())
-                        .onLongPressGesture {
+                        .onTapGesture {
                             detailMeasurement = measurement
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
