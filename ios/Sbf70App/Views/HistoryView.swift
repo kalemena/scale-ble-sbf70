@@ -91,17 +91,14 @@ struct HistoryView: View {
                     .frame(height: 220)
                     .listRowInsets(EdgeInsets(top: 8, leading: 4, bottom: 8, trailing: 4))
 
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 74), spacing: 8)],
-                    alignment: .leading,
-                    spacing: 6
-                ) {
-                    toggleChip("Weight", isOn: .constant(true), color: .blue)
-                    toggleChip("Fat %", isOn: $showFat, color: .orange)
-                    toggleChip("Water %", isOn: $showWater, color: .cyan)
-                    toggleChip("Muscle %", isOn: $showMuscle, color: .green)
-                    toggleChip("Bone %", isOn: $showBonePct, color: .pink)
+                HStack(spacing: 20) {
+                    toggleChip("scalemass.fill", label: "Weight", isOn: .constant(true), color: .blue)
+                    toggleChip("pizza.slice", label: "Fat %", isOn: $showFat, color: .orange)
+                    toggleChip("humidity.fill", label: "Water %", isOn: $showWater, color: .cyan)
+                    toggleChip("dumbbell.fill", label: "Muscle %", isOn: $showMuscle, color: .green)
+                    toggleChip("figure.walk", label: "Bone %", isOn: $showBonePct, color: .pink)
                 }
+                .frame(maxWidth: .infinity)
                 .font(.caption)
             }
 
@@ -237,14 +234,18 @@ struct HistoryView: View {
         return percentRange.lowerBound + fraction * (percentRange.upperBound - percentRange.lowerBound)
     }
 
-    private func toggleChip(_ label: String, isOn: Binding<Bool>, color: Color) -> some View {
+    private func toggleChip(_ icon: String, label: String, isOn: Binding<Bool>, color: Color) -> some View {
         Button {
             isOn.wrappedValue.toggle()
         } label: {
-            Label(label, systemImage: isOn.wrappedValue ? "checkmark.circle.fill" : "circle")
+            Image(systemName: icon)
+                .frame(width: 32, height: 32)
                 .foregroundStyle(isOn.wrappedValue ? color : .secondary)
+                .opacity(isOn.wrappedValue ? 1 : 0.5)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(isOn.wrappedValue ? .isSelected : [])
     }
 
     private func row(_ m: ScaleMeasurement) -> some View {
