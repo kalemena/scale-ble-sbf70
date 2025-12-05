@@ -17,6 +17,7 @@ struct HistoryView: View {
     @State private var detailMeasurement: ScaleMeasurement?
     @State private var usersByUID: [String: ScaleUser] = [:]
     @State private var showSync = false
+    @State private var chartFullScreen = false
 
     var body: some View {
         NavigationStack {
@@ -82,6 +83,40 @@ struct HistoryView: View {
         .sheet(isPresented: $showSync) {
             SyncView()
         }
+        .fullScreenCover(isPresented: $chartFullScreen) {
+            fullScreenChart
+        }
+    }
+
+    private var fullScreenChart: some View {
+        ZStack {
+            Color(.systemBackground)
+                .ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                chart
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        chartFullScreen = false
+                    }
+
+                legend
+                    .font(.title3)
+            }
+            .padding()
+        }
+    }
+
+    private var legend: some View {
+        HStack(spacing: 20) {
+            toggleChip("scalemass.fill", label: "Weight", isOn: .constant(true), color: .blue)
+            toggleChip("pizza.slice", label: "Fat %", isOn: $showFat, color: .orange)
+            toggleChip("humidity.fill", label: "Water %", isOn: $showWater, color: .cyan)
+            toggleChip("dumbbell.fill", label: "Muscle %", isOn: $showMuscle, color: .green)
+            toggleChip("figure.walk", label: "Bone %", isOn: $showBonePct, color: .pink)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var chartAndList: some View {
@@ -89,17 +124,14 @@ struct HistoryView: View {
             Section {
                 chart
                     .frame(height: 220)
+                    .contentShape(Rectangle())
+                    .onLongPressGesture {
+                        chartFullScreen = true
+                    }
                     .listRowInsets(EdgeInsets(top: 8, leading: 4, bottom: 8, trailing: 4))
 
-                HStack(spacing: 20) {
-                    toggleChip("scalemass.fill", label: "Weight", isOn: .constant(true), color: .blue)
-                    toggleChip("pizza.slice", label: "Fat %", isOn: $showFat, color: .orange)
-                    toggleChip("humidity.fill", label: "Water %", isOn: $showWater, color: .cyan)
-                    toggleChip("dumbbell.fill", label: "Muscle %", isOn: $showMuscle, color: .green)
-                    toggleChip("figure.walk", label: "Bone %", isOn: $showBonePct, color: .pink)
-                }
-                .frame(maxWidth: .infinity)
-                .font(.caption)
+                legend
+                    .font(.caption)
             }
 
             Section("\(measurements.count) readings") {
