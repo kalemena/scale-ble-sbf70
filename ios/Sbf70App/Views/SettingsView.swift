@@ -1,12 +1,13 @@
 import Sbf70Kit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject private var session: SessionViewModel
     @EnvironmentObject private var appSettings: AppSettings
     @State private var users: [ScaleUser] = []
     @State private var counts: [String: Int] = [:]
-    @State private var showImporter = false
+    @State private var showImportDialog = false
     @State private var importResult: String?
     @State private var showWipeConfirm = false
 
@@ -21,12 +22,9 @@ struct SettingsView: View {
             .navigationTitle("Settings")
         }
         .task { await reload() }
-        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
-            switch result {
-            case let .success(url):
-                Task { await importFile(at: url) }
-            case .failure:
-                importResult = "Import failed."
+        .sheet(isPresented: $showImportDialog) {
+            ImportDialog { format, url in
+                Task { await importFile(format: format, at: url) }
             }
         }
         .confirmationDialog("Wipe all local data?", isPresented: $showWipeConfirm, titleVisibility: .visible) {
@@ -90,8 +88,8 @@ struct SettingsView: View {
                     LabeledContent("uid \(uid.suffix(6))", value: "\(counts[uid] ?? 0) readings")
                 }
             }
-            Button("Import CLI export (history JSON)…") {
-                showImporter = true
+            Button("Import") {
+                showImportDialog = true
             }
             if let importResult {
                 Text(importResult)
@@ -117,7 +115,7 @@ struct SettingsView: View {
         counts = (try? await JsonStore.shared.allMeasurementCounts()) ?? [:]
     }
 
-    private func importFile(at url: URL) async {
+    private func importFile(format: ImportFormat, at url: URL) async {
         guard url.startAccessingSecurityScopedResource() else {
             importResult = "Cannot access the selected file."
             return
@@ -125,13 +123,111 @@ struct SettingsView: View {
         defer { url.stopAccessingSecurityScopedResource() }
         do {
             let data = try Data(contentsOf: url)
-            let results = try await JsonStore.shared.importCLIExport(data)
+            let results: [String: (inserted: Int, updated: Int)]
+            switch format {
+            case .json:
+                results = try await JsonStore.shared.importCLIExport(data)
+            case .csv:
+                results = try await JsonStore.shared.importCSV(data)
+            }
             await appSettings.load()
             await reload()
             let total = results.values.reduce(0) { $0 + $1.inserted + $1.updated }
             importResult = "Imported \(total) measurement(s) across \(results.count) user(s)."
         } catch {
             importResult = "Import failed: \(error.localizedDescription)"
+        }
+    }
+}
+
+// MARK: - Import dialog
+
+enum ImportFormat: String, CaseIterable, Identifiable {
+    case json
+    case csv
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .json: return "JSON"
+        case .csv: return "CSV"
+        }
+    }
+
+    var contentType: UTType {
+        switch self {
+        case .json: return .json
+        case .csv: return .commaSeparatedText
+        }
+    }
+}
+
+private struct ImportDialog: View {
+    let onImport: (ImportFormat, URL) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var format: ImportFormat = .json
+    @State private var selectedFile: URL?
+    @State private var showImporter = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Format") {
+                    Picker("Format", selection: $format) {
+                        ForEach(ImportFormat.allCases) { format in
+                            Text(format.title).tag(format)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+                Section("File") {
+                    Button {
+                        showImporter = true
+                    } label: {
+                        if let selectedFile {
+                            HStack {
+                                Text("File")
+                                Spacer()
+                                Text(selectedFile.lastPathComponent)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                        } else {
+                            Text("Choose file…")
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Import")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Import") {
+                        if let selectedFile {
+                            onImport(format, selectedFile)
+                        }
+                        dismiss()
+                    }
+                    .disabled(selectedFile == nil)
+                }
+            }
+            .onChange(of: format) { _, _ in
+                selectedFile = nil
+            }
+            .fileImporter(
+                isPresented: $showImporter,
+                allowedContentTypes: [format.contentType]
+            ) { result in
+                if case let .success(url) = result {
+                    selectedFile = url
+                }
+            }
         }
     }
 }

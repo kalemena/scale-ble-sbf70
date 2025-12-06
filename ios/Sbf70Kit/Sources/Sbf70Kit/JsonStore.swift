@@ -179,6 +179,121 @@ public actor JsonStore {
         return results
     }
 
+    // MARK: - CSV import (history export format)
+
+    /// Import a `sbf70-history-*.csv` export (or any CSV with the same
+    /// snake_case header). Returns merged counts per uid.
+    @discardableResult
+    public func importCSV(_ data: Data) throws -> [String: (inserted: Int, updated: Int)] {
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw SBF70Error.malformed("CSV is not valid UTF-8 text")
+        }
+        let rows = Self.parseCSV(text).filter { !$0.allSatisfy { $0.isEmpty } }
+        guard let header = rows.first else { return [:] }
+        let columns = header.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+
+        func column(_ name: String) -> Int? {
+            columns.firstIndex(of: name)
+        }
+
+        guard let timestampColumn = column("timestamp"),
+              let weightColumn = column("weight_kg") else {
+            throw SBF70Error.malformed("CSV is missing the timestamp or weight_kg column")
+        }
+        let timeISOColumn = column("time_iso")
+        let impedanceColumn = column("impedance")
+        let fatColumn = column("fat_pct")
+        let waterColumn = column("water_pct")
+        let muscleColumn = column("muscle_pct")
+        let boneColumn = column("bone_kg")
+        let uidColumn = column("uid")
+        let userNameColumn = column("user_name")
+
+        var measurements: [ScaleMeasurement] = []
+        for row in rows.dropFirst() {
+            func value(_ index: Int?) -> String? {
+                guard let index, index < row.count else { return nil }
+                let trimmed = row[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+            guard let timestampText = value(timestampColumn),
+                  let timestamp = Int(timestampText),
+                  let weightText = value(weightColumn),
+                  let weight = Double(weightText) else { continue }
+
+            measurements.append(ScaleMeasurement(
+                timestamp: timestamp,
+                timeISO: value(timeISOColumn)
+                    ?? ScaleCodec.timeISO(unixSeconds: UInt32(truncatingIfNeeded: timestamp)),
+                weightKg: weight,
+                impedance: Int(value(impedanceColumn) ?? "") ?? 0,
+                fatPct: Double(value(fatColumn) ?? "") ?? 0,
+                waterPct: Double(value(waterColumn) ?? "") ?? 0,
+                musclePct: Double(value(muscleColumn) ?? "") ?? 0,
+                boneKg: Double(value(boneColumn) ?? "") ?? 0,
+                uid: value(uidColumn),
+                userName: value(userNameColumn)
+            ))
+        }
+
+        var results: [String: (inserted: Int, updated: Int)] = [:]
+        let grouped = Dictionary(grouping: measurements, by: { $0.uid ?? "" })
+        for (uidHex, items) in grouped {
+            guard !uidHex.isEmpty else { continue }
+            results[uidHex] = try mergeMeasurements(uidHex: uidHex, new: items)
+        }
+        return results
+    }
+
+    /// Minimal RFC 4180 CSV parser: handles quoted fields, escaped quotes and
+    /// CRLF line endings.
+    private static func parseCSV(_ text: String) -> [[String]] {
+        var rows: [[String]] = []
+        var row: [String] = []
+        var field = ""
+        var inQuotes = false
+        let characters = Array(text)
+        var index = 0
+        while index < characters.count {
+            let character = characters[index]
+            if inQuotes {
+                if character == "\"" {
+                    if index + 1 < characters.count, characters[index + 1] == "\"" {
+                        field.append("\"")
+                        index += 1
+                    } else {
+                        inQuotes = false
+                    }
+                } else {
+                    field.append(character)
+                }
+            } else {
+                switch character {
+                case "\"":
+                    inQuotes = true
+                case ",":
+                    row.append(field)
+                    field = ""
+                case "\n":
+                    row.append(field)
+                    rows.append(row)
+                    row = []
+                    field = ""
+                case "\r":
+                    break
+                default:
+                    field.append(character)
+                }
+            }
+            index += 1
+        }
+        if !field.isEmpty || !row.isEmpty {
+            row.append(field)
+            rows.append(row)
+        }
+        return rows
+    }
+
     // MARK: - Maintenance
 
     public func wipeAllData() throws {

@@ -131,6 +131,22 @@ final class JsonStoreTests: XCTestCase {
         XCTAssertEqual(users[0].year, 2000)
     }
 
+    func testImportCSVFixture() async throws {
+        let csv = """
+        timestamp,time_iso,weight_kg,impedance,fat_pct,water_pct,muscle_pct,bone_kg,uid,user_name
+        1672865776,2023-01-04T20:56:16+00:00,69.8,473,21.9,52.2,40.1,11.7,0000000000000065,"CLE, home"
+        1691755645,2023-08-11T12:07:25+00:00,68.7,449,21.0,52.8,40.4,11.5,0000000000000065,CLE
+        """
+        let store = makeStore()
+        let results = try await store.importCSV(Data(csv.utf8))
+        XCTAssertEqual(results["0000000000000065"]?.inserted, 2)
+
+        let measurements = try await store.loadMeasurements(uidHex: "0000000000000065")
+        XCTAssertEqual(measurements.count, 2)
+        XCTAssertEqual(measurements[0].weightKg, 69.8, accuracy: 0.001)
+        XCTAssertEqual(measurements[0].userName, "CLE, home")
+    }
+
     func testWipeAllData() async throws {
         let store = makeStore()
         _ = try await store.mergeMeasurements(uidHex: "0000000000000065", new: [sampleMeasurement()])
