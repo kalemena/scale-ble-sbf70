@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var users: [ScaleUser] = []
     @State private var counts: [String: Int] = [:]
     @State private var showImportDialog = false
+    @State private var showExportDialog = false
     @State private var importResult: String?
     @State private var showWipeConfirm = false
 
@@ -22,10 +23,17 @@ struct SettingsView: View {
             .navigationTitle("Settings")
         }
         .task { await reload() }
+        .onAppear { Task { await reload() } }
+        .onChange(of: appSettings.activeUidHex) { _, _ in
+            Task { await reload() }
+        }
         .sheet(isPresented: $showImportDialog) {
             ImportDialog { format, url in
                 Task { await importFile(format: format, at: url) }
             }
+        }
+        .sheet(isPresented: $showExportDialog) {
+            ExportDialog()
         }
         .confirmationDialog("Wipe all local data?", isPresented: $showWipeConfirm, titleVisibility: .visible) {
             Button("Wipe", role: .destructive) {
@@ -91,6 +99,9 @@ struct SettingsView: View {
             Button("Import") {
                 showImportDialog = true
             }
+            Button("Export") {
+                showExportDialog = true
+            }
             if let importResult {
                 Text(importResult)
                     .font(.footnote)
@@ -115,7 +126,7 @@ struct SettingsView: View {
         counts = (try? await JsonStore.shared.allMeasurementCounts()) ?? [:]
     }
 
-    private func importFile(format: ImportFormat, at url: URL) async {
+    private func importFile(format: DataFormat, at url: URL) async {
         guard url.startAccessingSecurityScopedResource() else {
             importResult = "Cannot access the selected file."
             return
@@ -140,9 +151,9 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Import dialog
+// MARK: - Import / export formats
 
-enum ImportFormat: String, CaseIterable, Identifiable {
+enum DataFormat: String, CaseIterable, Identifiable {
     case json
     case csv
 
@@ -163,11 +174,13 @@ enum ImportFormat: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Import dialog
+
 private struct ImportDialog: View {
-    let onImport: (ImportFormat, URL) -> Void
+    let onImport: (DataFormat, URL) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var format: ImportFormat = .json
+    @State private var format: DataFormat = .json
     @State private var selectedFile: URL?
     @State private var showImporter = false
 
@@ -176,7 +189,7 @@ private struct ImportDialog: View {
             Form {
                 Section("Format") {
                     Picker("Format", selection: $format) {
-                        ForEach(ImportFormat.allCases) { format in
+                        ForEach(DataFormat.allCases) { format in
                             Text(format.title).tag(format)
                         }
                     }
@@ -230,4 +243,131 @@ private struct ImportDialog: View {
             }
         }
     }
+}
+
+// MARK: - Export dialog
+
+private struct ExportDialog: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var format: DataFormat = .json
+    @State private var measurements: [ScaleMeasurement] = []
+    @State private var uidHex: String?
+    @State private var userName: String?
+    @State private var isLoading = true
+
+    private var exportURL: URL? {
+        guard !measurements.isEmpty, let uidHex else { return nil }
+        switch format {
+        case .json:
+            return Self.jsonURL(uidHex: uidHex, measurements: measurements)
+        case .csv:
+            return Self.csvURL(uidHex: uidHex, measurements: measurements)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Format") {
+                    Picker("Format", selection: $format) {
+                        ForEach(DataFormat.allCases) { format in
+                            Text(format.title).tag(format)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+                Section("User") {
+                    if isLoading {
+                        ProgressView()
+                    } else if let uidHex {
+                        LabeledContent("User", value: userName ?? "uid \(uidHex.suffix(6))")
+                    } else {
+                        Text("No user with measurements.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Section {
+                    if let exportURL {
+                        ShareLink(item: exportURL) {
+                            Label("Export \(format.title)", systemImage: "square.and.arrow.up")
+                        }
+                    } else if !isLoading {
+                        Text("No measurements to export.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Export")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .task { await load() }
+        }
+    }
+
+    /// Load fresh from disk when the dialog opens so it never depends on a
+    /// possibly stale in-memory active user.
+    private func load() async {
+        let counts = (try? await JsonStore.shared.allMeasurementCounts()) ?? [:]
+        let settings = (try? await JsonStore.shared.loadSettings()) ?? .init()
+
+        let preferred = settings.activeUidHex
+        let uid: String?
+        if let preferred, (counts[preferred] ?? 0) > 0 {
+            uid = preferred
+        } else {
+            uid = counts.keys.sorted().first
+        }
+
+        uidHex = uid
+        if let uid {
+            measurements = (try? await JsonStore.shared.loadMeasurements(uidHex: uid)) ?? []
+            let users = (try? await JsonStore.shared.loadUsers()) ?? []
+            userName = users.first { $0.uidHex == uid }?.displayName
+        } else {
+            measurements = []
+            userName = nil
+        }
+        isLoading = false
+    }
+
+    /// CSV export matching CLI measurement fields (snake_case via CodingKeys).
+    private static func csvURL(uidHex: String, measurements: [ScaleMeasurement]) -> URL? {
+        // Header: timestamp,time_iso,weight_kg,impedance,fat_pct,water_pct,muscle_pct,bone_kg,uid,user_name
+        var csv = "timestamp,time_iso,weight_kg,impedance,fat_pct,water_pct,muscle_pct,bone_kg,uid,user_name\n"
+        for m in measurements {
+            let uid = m.uid ?? ""
+            let user = m.userName ?? ""
+            csv += "\(m.timestamp),\(m.timeISO),\(m.weightKg),\(m.impedance),\(m.fatPct),\(m.waterPct),\(m.musclePct),\(m.boneKg),\(uid),\(user)\n"
+        }
+        let data = Data(csv.utf8)
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sbf70-history-\(uidHex).csv")
+        try? data.write(to: url, options: .atomic)
+        return url
+    }
+
+    /// CLI-compatible JSON for piping into tools/measurements-report.py.
+    private static func jsonURL(uidHex: String, measurements: [ScaleMeasurement]) -> URL? {
+        // JSONEncoder, not JSONSerialization: the latter rejects Swift structs
+        // boxed as __SwiftValue ("Invalid type in JSON write").
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(CLIExportPayload(uid: uidHex, measurements: measurements)) else {
+            return nil
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sbf70-history-\(uidHex).json")
+        try? data.write(to: url, options: .atomic)
+        return url
+    }
+}
+
+/// Matches `sbf70.py history` JSON output shape (keys come from CodingKeys).
+private struct CLIExportPayload: Encodable {
+    let uid: String
+    let measurements: [ScaleMeasurement]
 }

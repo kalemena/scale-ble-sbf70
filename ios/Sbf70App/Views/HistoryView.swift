@@ -13,7 +13,6 @@ struct HistoryView: View {
     @State private var showWater = false
     @State private var showMuscle = false
     @State private var showBonePct = false
-    @State private var exportURL: URL?
     @State private var detailMeasurement: ScaleMeasurement?
     @State private var usersByUID: [String: ScaleUser] = [:]
     @State private var showSync = false
@@ -42,17 +41,6 @@ struct HistoryView: View {
                             Label("Sync from Scale", systemImage: "arrow.triangle.2.circlepath")
                         }
                         .disabled(session.client == nil || appSettings.activeUidHex == nil)
-
-                        if let url = csvURL {
-                            ShareLink(item: url) {
-                                Label("Export CSV", systemImage: "tablecells")
-                            }
-                        }
-                        if let url = shareURL {
-                            ShareLink(item: url) {
-                                Label("Export JSON", systemImage: "square.and.arrow.up")
-                            }
-                        }
                     } label: {
                         Label("More", systemImage: "ellipsis.circle")
                     }
@@ -360,44 +348,6 @@ struct HistoryView: View {
         }
     }
 
-    /// CSV export matching CLI measurement fields (snake_case via CodingKeys).
-    private var csvURL: URL? {
-        guard !measurements.isEmpty, let uidHex = appSettings.activeUidHex else { return nil }
-        // Header: timestamp,time_iso,weight_kg,impedance,fat_pct,water_pct,muscle_pct,bone_kg,uid,user_name
-        var csv = "timestamp,time_iso,weight_kg,impedance,fat_pct,water_pct,muscle_pct,bone_kg,uid,user_name\n"
-        for m in measurements {
-            let uid = m.uid ?? ""
-            let user = m.userName ?? ""
-            csv += "\(m.timestamp),\(m.timeISO),\(m.weightKg),\(m.impedance),\(m.fatPct),\(m.waterPct),\(m.musclePct),\(m.boneKg),\(uid),\(user)\n"
-        }
-        let data = Data(csv.utf8)
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("sbf70-history-\(uidHex).csv")
-        try? data.write(to: url, options: .atomic)
-        return url
-    }
-
-    /// CLI-compatible JSON for piping into tools/measurements-report.py.
-    private var shareURL: URL? {
-        guard !measurements.isEmpty, let uidHex = appSettings.activeUidHex else { return nil }
-        // JSONEncoder, not JSONSerialization: the latter rejects Swift structs
-        // boxed as __SwiftValue ("Invalid type in JSON write").
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(CLIExportPayload(uid: uidHex, measurements: measurements)) else {
-            return nil
-        }
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("sbf70-history-\(uidHex).json")
-        try? data.write(to: url, options: .atomic)
-        return url
-    }
-}
-
-/// Matches `sbf70.py history` JSON output shape (keys come from CodingKeys).
-private struct CLIExportPayload: Encodable {
-    let uid: String
-    let measurements: [ScaleMeasurement]
 }
 
 /// Long-press detail sheet: every field stored for one reading.
