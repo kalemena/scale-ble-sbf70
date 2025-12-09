@@ -274,6 +274,12 @@ struct HistoryView: View {
                 Text(m.date.formatted(date: .abbreviated, time: .shortened))
                     .font(.subheadline)
                 Spacer()
+                if let trend = weightTrend(for: m) {
+                    Image(systemName: trend.icon)
+                        .font(.caption)
+                        .foregroundStyle(trend.color)
+                        .accessibilityLabel(trend.accessibilityLabel)
+                }
                 Text(String(format: "%.2f kg", m.weightKg))
                     .font(.subheadline.weight(.medium))
                     .monospacedDigit()
@@ -281,6 +287,42 @@ struct HistoryView: View {
             summaryBar(for: m)
                 .font(.caption2)
         }
+    }
+
+    private enum WeightTrend {
+        case up, down
+
+        var icon: String {
+            switch self {
+            case .up: "arrow.up"
+            case .down: "arrow.down"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .up: .red
+            case .down: .green
+            }
+        }
+
+        var accessibilityLabel: String {
+            switch self {
+            case .up: "Weight up"
+            case .down: "Weight down"
+            }
+        }
+    }
+
+    /// Compare against the previous reading by date.
+    private func weightTrend(for m: ScaleMeasurement) -> WeightTrend? {
+        guard let index = measurements.firstIndex(where: { $0.id == m.id }),
+              index > 0
+        else { return nil }
+        let previousWeight = measurements[index - 1].weightKg
+        if m.weightKg > previousWeight { return .up }
+        if m.weightKg < previousWeight { return .down }
+        return nil
     }
 
     @ViewBuilder
