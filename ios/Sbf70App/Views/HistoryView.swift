@@ -61,7 +61,10 @@ struct HistoryView: View {
                 Task { await reload() }
             }
         }
-        .sheet(item: $detailMeasurement) { measurement in
+        .sheet(item: Binding(
+            get: { chartFullScreen ? nil : detailMeasurement },
+            set: { detailMeasurement = $0 }
+        )) { measurement in
             MeasurementDetailSheet(
                 measurement: measurement,
                 userName: measurementUserName(measurement),
@@ -77,22 +80,36 @@ struct HistoryView: View {
     }
 
     private var fullScreenChart: some View {
-        ZStack {
+        ZStack(alignment: .topTrailing) {
             Color(.systemBackground)
                 .ignoresSafeArea()
 
             VStack(spacing: 16) {
                 chart
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        chartFullScreen = false
-                    }
 
                 legend
                     .font(.title3)
             }
             .padding()
+
+            Button {
+                chartFullScreen = false
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+            }
+            .padding()
+            .accessibilityLabel("Close")
+        }
+        .sheet(item: $detailMeasurement) { measurement in
+            MeasurementDetailSheet(
+                measurement: measurement,
+                userName: measurementUserName(measurement),
+                bmi: bmi(for: measurement)
+            )
         }
     }
 
@@ -212,6 +229,28 @@ struct HistoryView: View {
                     }
                 }
             }
+        }
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .onTapGesture { location in
+                        guard let plotFrame = proxy.plotFrame else { return }
+                        let origin = geometry[plotFrame].origin
+                        guard let date: Date = proxy.value(atX: location.x - origin.x) else { return }
+                        if let nearest = nearestMeasurement(to: date) {
+                            detailMeasurement = nearest
+                        }
+                    }
+            }
+        }
+    }
+
+    /// Closest reading to a date tapped on the chart.
+    private func nearestMeasurement(to date: Date) -> ScaleMeasurement? {
+        measurements.min {
+            abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date))
         }
     }
 
