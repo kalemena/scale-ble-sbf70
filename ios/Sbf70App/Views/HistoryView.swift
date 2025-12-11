@@ -17,6 +17,7 @@ struct HistoryView: View {
     @State private var usersByUID: [String: ScaleUser] = [:]
     @State private var showSync = false
     @State private var chartFullScreen = false
+    @State private var readingsExpanded = false
 
     var body: some View {
         NavigationStack {
@@ -139,21 +140,43 @@ struct HistoryView: View {
                     .font(.caption)
             }
 
-            Section("\(measurements.count) readings") {
-                ForEach(measurements.reversed()) { measurement in
-                    row(measurement)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            detailMeasurement = measurement
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) {
-                                delete(measurement)
-                            } label: {
-                                Label("Delete", systemImage: "trash")
+            Section {
+                if readingsExpanded {
+                    ForEach(measurements.reversed()) { measurement in
+                        row(measurement)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                detailMeasurement = measurement
                             }
-                        }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    delete(measurement)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                    }
                 }
+            } header: {
+                Button {
+                    withAnimation {
+                        readingsExpanded.toggle()
+                    }
+                } label: {
+                    HStack {
+                        Text("\(measurements.count) readings")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .rotationEffect(.degrees(readingsExpanded ? 90 : 0))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .textCase(nil)
+                .accessibilityLabel("\(measurements.count) readings")
+                .accessibilityValue(readingsExpanded ? "Expanded" : "Collapsed")
             }
         }
     }
