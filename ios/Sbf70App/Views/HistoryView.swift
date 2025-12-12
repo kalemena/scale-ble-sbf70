@@ -18,6 +18,8 @@ struct HistoryView: View {
     @State private var showSync = false
     @State private var chartFullScreen = false
     @State private var readingsExpanded = false
+    @State private var rangeStart: Double = 0
+    @State private var rangeEnd: Double = 1
 
     var body: some View {
         NavigationStack {
@@ -125,6 +127,45 @@ struct HistoryView: View {
         .frame(maxWidth: .infinity)
     }
 
+    private var timeSelector: some View {
+        VStack(spacing: 4) {
+            RangeSlider(lowerValue: $rangeStart, upperValue: $rangeEnd)
+            HStack {
+                Text(rangeLabel(at: rangeStart))
+                Spacer()
+                Text(rangeLabel(at: rangeEnd))
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Time range")
+    }
+
+    /// Full date span covered by the stored readings.
+    private var dateBounds: (start: Date, end: Date)? {
+        let dates = measurements.map(\.date)
+        guard let start = dates.min(), let end = dates.max() else { return nil }
+        return (start, end)
+    }
+
+    /// Readings inside the selected time range.
+    private var visibleMeasurements: [ScaleMeasurement] {
+        guard let bounds = dateBounds, bounds.end > bounds.start else { return measurements }
+        let span = bounds.end.timeIntervalSince(bounds.start)
+        let start = bounds.start.addingTimeInterval(span * rangeStart)
+        let end = bounds.start.addingTimeInterval(span * rangeEnd)
+        return measurements.filter { $0.date >= start && $0.date <= end }
+    }
+
+    private func rangeLabel(at fraction: Double) -> String {
+        guard let bounds = dateBounds else { return "" }
+        let span = bounds.end.timeIntervalSince(bounds.start)
+        let date = bounds.start.addingTimeInterval(span * fraction)
+        return date.formatted(date: .abbreviated, time: .omitted)
+    }
+
     private var chartAndList: some View {
         List {
             Section {
@@ -138,11 +179,14 @@ struct HistoryView: View {
 
                 legend
                     .font(.caption)
+
+                timeSelector
+                    .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 8, trailing: 20))
             }
 
             Section {
                 if readingsExpanded {
-                    ForEach(measurements.reversed()) { measurement in
+                    ForEach(visibleMeasurements.reversed()) { measurement in
                         row(measurement)
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -164,7 +208,7 @@ struct HistoryView: View {
                     }
                 } label: {
                     HStack {
-                        Text("\(measurements.count) readings")
+                        Text("\(visibleMeasurements.count) readings")
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.caption.weight(.semibold))
@@ -175,7 +219,7 @@ struct HistoryView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .textCase(nil)
-                .accessibilityLabel("\(measurements.count) readings")
+                .accessibilityLabel("\(visibleMeasurements.count) readings")
                 .accessibilityValue(readingsExpanded ? "Expanded" : "Collapsed")
             }
         }
@@ -188,7 +232,7 @@ struct HistoryView: View {
             chartY(forPercent: $0, weightRange: weightDomain, percentRange: percentDomain)
         }
 
-        return Chart(measurements) { m in
+        return Chart(visibleMeasurements) { m in
             LineMark(x: .value("Date", m.date), y: .value("Weight", m.weightKg))
                 .foregroundStyle(.blue)
                 .interpolationMethod(.monotone)
@@ -272,7 +316,7 @@ struct HistoryView: View {
 
     /// Closest reading to a date tapped on the chart.
     private func nearestMeasurement(to date: Date) -> ScaleMeasurement? {
-        measurements.min {
+        visibleMeasurements.min {
             abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date))
         }
     }
@@ -284,7 +328,7 @@ struct HistoryView: View {
 
     /// Weight axis domain with a little breathing room above and below.
     private var weightRange: ClosedRange<Double> {
-        let weights = measurements.map(\.weightKg)
+        let weights = visibleMeasurements.map(\.weightKg)
         guard let minWeight = weights.min(), let maxWeight = weights.max() else { return 0...100 }
         let span = max(maxWeight - minWeight, 1.0)
         let mid = (minWeight + maxWeight) / 2
@@ -452,6 +496,65 @@ struct HistoryView: View {
         }
     }
 
+}
+
+/// Two-handle slider for picking a fraction-based range.
+private struct RangeSlider: View {
+    @Binding var lowerValue: Double
+    @Binding var upperValue: Double
+
+    private let handleDiameter: CGFloat = 28
+
+    var body: some View {
+        GeometryReader { geometry in
+            let usableWidth = max(geometry.size.width - handleDiameter, 1)
+            let lowerX = usableWidth * lowerValue
+            let upperX = usableWidth * upperValue
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.secondary.opacity(0.25))
+                    .frame(height: 4)
+                    .padding(.horizontal, handleDiameter / 2)
+
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: max(upperX - lowerX, 0), height: 4)
+                    .offset(x: handleDiameter / 2 + lowerX)
+
+                handle
+                    .offset(x: lowerX)
+                    .gesture(dragGesture(usableWidth: usableWidth, isLower: true))
+                handle
+                    .offset(x: upperX)
+                    .gesture(dragGesture(usableWidth: usableWidth, isLower: false))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .coordinateSpace(.named("rangeSlider"))
+        }
+        .frame(height: handleDiameter)
+    }
+
+    private var handle: some View {
+        Circle()
+            .fill(Color(.systemBackground))
+            .frame(width: handleDiameter, height: handleDiameter)
+            .overlay(Circle().strokeBorder(Color.accentColor, lineWidth: 2))
+            .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
+    }
+
+    private func dragGesture(usableWidth: CGFloat, isLower: Bool) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named("rangeSlider"))
+            .onChanged { value in
+                let fraction = (value.location.x - handleDiameter / 2) / usableWidth
+                let clamped = min(max(fraction, 0), 1)
+                if isLower {
+                    lowerValue = min(clamped, upperValue)
+                } else {
+                    upperValue = max(clamped, lowerValue)
+                }
+            }
+    }
 }
 
 /// Long-press detail sheet: every field stored for one reading.
