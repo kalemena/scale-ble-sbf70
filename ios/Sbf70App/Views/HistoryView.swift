@@ -395,7 +395,7 @@ struct HistoryView: View {
         }
     }
 
-    private enum WeightTrend {
+    private enum TrendDirection {
         case up, down
 
         var icon: String {
@@ -414,46 +414,95 @@ struct HistoryView: View {
 
         var accessibilityLabel: String {
             switch self {
-            case .up: "Weight up"
-            case .down: "Weight down"
+            case .up: "Increased"
+            case .down: "Decreased"
             }
         }
     }
 
-    /// Compare against the previous reading by date.
-    private func weightTrend(for m: ScaleMeasurement) -> WeightTrend? {
+    /// Reading immediately before `m` by date.
+    private func previousMeasurement(for m: ScaleMeasurement) -> ScaleMeasurement? {
         guard let index = measurements.firstIndex(where: { $0.id == m.id }),
               index > 0
         else { return nil }
-        let previousWeight = measurements[index - 1].weightKg
-        if m.weightKg > previousWeight { return .up }
-        if m.weightKg < previousWeight { return .down }
+        return measurements[index - 1]
+    }
+
+    private func trend(current: Double?, previous: Double?) -> TrendDirection? {
+        guard let current, let previous else { return nil }
+        if current > previous { return .up }
+        if current < previous { return .down }
         return nil
+    }
+
+    /// Compare weight against the previous reading by date.
+    private func weightTrend(for m: ScaleMeasurement) -> TrendDirection? {
+        trend(current: m.weightKg, previous: previousMeasurement(for: m)?.weightKg)
     }
 
     @ViewBuilder
     private func summaryBar(for m: ScaleMeasurement) -> some View {
         let bmiInfo = BMIInfo(bmi: bmi(for: m))
-        HStack(spacing: 12) {
-            summaryItem(icon: bmiInfo.icon, value: bmiInfo.text, color: bmiInfo.color, label: "BMI")
-            summaryItem(icon: "pizza.slice", value: String(format: "%.1f%%", m.fatPct), label: "Fat")
-            summaryItem(icon: "humidity.fill", value: String(format: "%.1f%%", m.waterPct), label: "Water")
-            summaryItem(icon: "dumbbell.fill", value: String(format: "%.1f%%", m.musclePct), label: "Muscle")
-            summaryItem(icon: "figure.walk", value: String(format: "%.2f kg", m.boneKg), label: "Bone")
+        let previous = previousMeasurement(for: m)
+        HStack(alignment: .top, spacing: 12) {
+            summaryItem(
+                icon: bmiInfo.icon,
+                value: bmiInfo.text,
+                color: bmiInfo.color,
+                label: "BMI",
+                trend: trend(current: bmi(for: m), previous: previous.flatMap { bmi(for: $0) })
+            )
+            summaryItem(
+                icon: "pizza.slice",
+                value: String(format: "%.1f%%", m.fatPct),
+                label: "Fat",
+                trend: trend(current: m.fatPct, previous: previous?.fatPct)
+            )
+            summaryItem(
+                icon: "humidity.fill",
+                value: String(format: "%.1f%%", m.waterPct),
+                label: "Water",
+                trend: trend(current: m.waterPct, previous: previous?.waterPct)
+            )
+            summaryItem(
+                icon: "dumbbell.fill",
+                value: String(format: "%.1f%%", m.musclePct),
+                label: "Muscle",
+                trend: trend(current: m.musclePct, previous: previous?.musclePct)
+            )
+            summaryItem(
+                icon: "figure.walk",
+                value: String(format: "%.2f kg", m.boneKg),
+                label: "Bone",
+                trend: trend(current: m.boneKg, previous: previous?.boneKg)
+            )
         }
         .foregroundStyle(.secondary)
     }
 
-    private func summaryItem(icon: String, value: String, color: Color = .secondary, label: String) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: icon)
-                .foregroundStyle(color)
-                .accessibilityHidden(true)
-            Text(value)
-                .monospacedDigit()
+    private func summaryItem(
+        icon: String,
+        value: String,
+        color: Color = .secondary,
+        label: String,
+        trend: TrendDirection?
+    ) -> some View {
+        VStack(spacing: 1) {
+            HStack(spacing: 3) {
+                Image(systemName: icon)
+                    .foregroundStyle(color)
+                    .accessibilityHidden(true)
+                Text(value)
+                    .monospacedDigit()
+            }
+            if let trend {
+                Image(systemName: trend.icon)
+                    .font(.caption2)
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label) \(value)")
+        .accessibilityValue(trend?.accessibilityLabel ?? "")
     }
 
     private func bmi(for m: ScaleMeasurement) -> Double? {
