@@ -380,11 +380,15 @@ struct HistoryView: View {
                 Text(m.date.formatted(date: .abbreviated, time: .shortened))
                     .font(.subheadline)
                 Spacer()
-                if let trend = weightTrend(for: m) {
-                    Image(systemName: trend.icon)
-                        .font(.caption)
-                        .foregroundStyle(trend.color)
-                        .accessibilityLabel(trend.accessibilityLabel)
+                if let trend = weightTrend(for: m), let weightDelta = weightDelta(for: m) {
+                    HStack(spacing: 2) {
+                        Text(String(format: "%+.2f", weightDelta))
+                            .monospacedDigit()
+                        Image(systemName: trend.icon)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(trend.color)
+                    .accessibilityLabel("\(trend.accessibilityLabel) \(String(format: "%+.2f", weightDelta)) kg")
                 }
                 Text(String(format: "%.2f kg", m.weightKg))
                     .font(.subheadline.weight(.medium))
@@ -435,46 +439,62 @@ struct HistoryView: View {
         return nil
     }
 
+    private func delta(current: Double?, previous: Double?) -> Double? {
+        guard let current, let previous else { return nil }
+        return current - previous
+    }
+
     /// Compare weight against the previous reading by date.
     private func weightTrend(for m: ScaleMeasurement) -> TrendDirection? {
         trend(current: m.weightKg, previous: previousMeasurement(for: m)?.weightKg)
+    }
+
+    private func weightDelta(for m: ScaleMeasurement) -> Double? {
+        delta(current: m.weightKg, previous: previousMeasurement(for: m)?.weightKg)
     }
 
     @ViewBuilder
     private func summaryBar(for m: ScaleMeasurement) -> some View {
         let bmiInfo = BMIInfo(bmi: bmi(for: m))
         let previous = previousMeasurement(for: m)
+        let currentBmi = bmi(for: m)
+        let previousBmi = previous.flatMap { bmi(for: $0) }
         HStack(alignment: .top, spacing: 12) {
             summaryItem(
                 icon: bmiInfo.icon,
                 value: bmiInfo.text,
                 color: bmiInfo.color,
                 label: "BMI",
-                trend: trend(current: bmi(for: m), previous: previous.flatMap { bmi(for: $0) })
+                delta: delta(current: currentBmi, previous: previousBmi),
+                decimals: 1
             )
             summaryItem(
                 icon: "pizza.slice",
                 value: String(format: "%.1f%%", m.fatPct),
                 label: "Fat",
-                trend: trend(current: m.fatPct, previous: previous?.fatPct)
+                delta: delta(current: m.fatPct, previous: previous?.fatPct),
+                decimals: 1
             )
             summaryItem(
                 icon: "humidity.fill",
                 value: String(format: "%.1f%%", m.waterPct),
                 label: "Water",
-                trend: trend(current: m.waterPct, previous: previous?.waterPct)
+                delta: delta(current: m.waterPct, previous: previous?.waterPct),
+                decimals: 1
             )
             summaryItem(
                 icon: "dumbbell.fill",
                 value: String(format: "%.1f%%", m.musclePct),
                 label: "Muscle",
-                trend: trend(current: m.musclePct, previous: previous?.musclePct)
+                delta: delta(current: m.musclePct, previous: previous?.musclePct),
+                decimals: 1
             )
             summaryItem(
                 icon: "figure.walk",
                 value: String(format: "%.2f kg", m.boneKg),
                 label: "Bone",
-                trend: trend(current: m.boneKg, previous: previous?.boneKg)
+                delta: delta(current: m.boneKg, previous: previous?.boneKg),
+                decimals: 2
             )
         }
         .foregroundStyle(.secondary)
@@ -485,9 +505,16 @@ struct HistoryView: View {
         value: String,
         color: Color = .secondary,
         label: String,
-        trend: TrendDirection?
+        delta: Double?,
+        decimals: Int
     ) -> some View {
-        VStack(spacing: 1) {
+        let trend: TrendDirection? = {
+            guard let delta else { return nil }
+            if delta > 0 { return .up }
+            if delta < 0 { return .down }
+            return nil
+        }()
+        return VStack(spacing: 1) {
             HStack(spacing: 3) {
                 Image(systemName: icon)
                     .foregroundStyle(color)
@@ -495,14 +522,18 @@ struct HistoryView: View {
                 Text(value)
                     .monospacedDigit()
             }
-            if let trend {
-                Image(systemName: trend.icon)
-                    .font(.caption2)
+            if let trend, let delta {
+                HStack(spacing: 2) {
+                    Image(systemName: trend.icon)
+                    Text(String(format: "%+.\(decimals)f", delta))
+                        .monospacedDigit()
+                }
+                .font(.caption2)
             }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label) \(value)")
-        .accessibilityValue(trend?.accessibilityLabel ?? "")
+        .accessibilityValue(trend.map { "\($0.accessibilityLabel) \(String(format: "%+.\(decimals)f", delta ?? 0))" } ?? "")
     }
 
     private func bmi(for m: ScaleMeasurement) -> Double? {
