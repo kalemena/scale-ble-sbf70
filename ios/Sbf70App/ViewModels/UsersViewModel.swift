@@ -6,9 +6,23 @@ import Sbf70Kit
 final class UsersViewModel: ObservableObject {
     @Published private(set) var users: [ScaleUser] = []
     @Published private(set) var details: [String: ScaleUser] = [:]
+    @Published private(set) var goals: [String: JsonStore.UserGoals] = [:]
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
     @Published var noticeMessage: String?
+
+    func loadGoals() async {
+        goals = (try? await JsonStore.shared.loadGoals()) ?? [:]
+    }
+
+    func setWeightGoal(uidHex: String, weightKg: Double?) async {
+        var updated = goals
+        var userGoals = updated[uidHex] ?? JsonStore.UserGoals()
+        userGoals.weightKg = weightKg
+        updated[uidHex] = userGoals
+        goals = updated
+        try? await JsonStore.shared.saveGoals(updated)
+    }
 
     func refresh(client: SBF70Client) async {
         isLoading = true

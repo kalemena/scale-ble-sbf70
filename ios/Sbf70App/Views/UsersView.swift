@@ -64,6 +64,22 @@ struct UsersView: View {
                         }
                     }
                 }
+
+                if let user = selectedUser {
+                    Section {
+                        GoalValueRow(
+                            label: "Weight target",
+                            unit: "kg",
+                            value: weightGoalBinding(for: user),
+                            bounds: 20...300,
+                            step: 0.1
+                        )
+                    } header: {
+                        Text("Goals")
+                    } footer: {
+                        Text("Saved on this device for \(user.name.uppercased()).")
+                    }
+                }
             }
             .navigationTitle("Users")
             .toolbar {
@@ -145,6 +161,7 @@ struct UsersView: View {
         }
         .task {
             await loadCached()
+            await model.loadGoals()
             if let client = session.client {
                 await model.refresh(client: client)
                 await loadCached()
@@ -175,6 +192,22 @@ struct UsersView: View {
 
     private func loadCached() async {
         cachedUsers = (try? await JsonStore.shared.loadUsers()) ?? []
+    }
+
+    private var selectedUser: ScaleUser? {
+        guard let uidHex = appSettings.activeUidHex else { return nil }
+        return displayUsers.first { $0.uidHex == uidHex }
+    }
+
+    private func weightGoalBinding(for user: ScaleUser) -> Binding<Double> {
+        Binding(
+            get: { model.goals[user.uidHex]?.weightKg ?? 70 },
+            set: { newValue in
+                let clamped = min(max(newValue, 20), 300)
+                let rounded = (clamped * 10).rounded() / 10
+                Task { await model.setWeightGoal(uidHex: user.uidHex, weightKg: rounded) }
+            }
+        )
     }
 
     @ViewBuilder
@@ -223,6 +256,61 @@ struct UsersView: View {
                 Label("Delete", systemImage: "trash")
             }
         }
+    }
+}
+
+/// Numeric target editor: a subdued text field flanked by up/down buttons.
+private struct GoalValueRow: View {
+    let label: String
+    let unit: String
+    @Binding var value: Double
+    let bounds: ClosedRange<Double>
+    let step: Double
+
+    var body: some View {
+        HStack {
+            Text(label)
+            Spacer()
+            TextField("", value: $value, format: .number.precision(.fractionLength(0...1)))
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.center)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 64)
+                .padding(.vertical, 6)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityLabel("\(label) value")
+            Text(unit)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 6)
+            stepperButtons
+                .padding(.leading, 8)
+        }
+    }
+
+    private var stepperButtons: some View {
+        VStack(spacing: 3) {
+            button(icon: "chevron.up", delta: step, accessibilityLabel: "Increase \(label.lowercased())")
+            button(icon: "chevron.down", delta: -step, accessibilityLabel: "Decrease \(label.lowercased())")
+        }
+        .buttonStyle(.borderless)
+    }
+
+    private func button(icon: String, delta: Double, accessibilityLabel: String) -> some View {
+        Button {
+            adjust(by: delta)
+        } label: {
+            Image(systemName: icon)
+                .font(.caption.weight(.semibold))
+                .frame(width: 30, height: 22)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 6))
+        }
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private func adjust(by delta: Double) {
+        let updated = min(max(value + delta, bounds.lowerBound), bounds.upperBound)
+        value = (updated * 10).rounded() / 10
     }
 }
 

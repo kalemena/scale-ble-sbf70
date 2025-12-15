@@ -5,6 +5,7 @@ import Foundation
 /// Files:
 /// - `settings.json` — last peripheral, active uid, sync preferences
 /// - `users.json` — cached user list from the scale
+/// - `goals.json` — per-user targets (weight, …)
 /// - `measurements-<uidHex>.json` — per-user measurements (CLI-compatible keys)
 public actor JsonStore {
     public static let shared = JsonStore()
@@ -31,6 +32,15 @@ public actor JsonStore {
         }
     }
 
+    /// Per-user targets. Stored locally (the scale has no goal fields).
+    public struct UserGoals: Codable, Equatable, Sendable {
+        public var weightKg: Double?
+
+        public init(weightKg: Double? = nil) {
+            self.weightKg = weightKg
+        }
+    }
+
     private let directory: URL
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
@@ -51,6 +61,7 @@ public actor JsonStore {
 
     private var settingsURL: URL { directory.appendingPathComponent("settings.json") }
     private var usersURL: URL { directory.appendingPathComponent("users.json") }
+    private var goalsURL: URL { directory.appendingPathComponent("goals.json") }
 
     private func measurementsURL(uidHex: String) -> URL {
         directory.appendingPathComponent("measurements-\(uidHex).json")
@@ -92,6 +103,28 @@ public actor JsonStore {
 
     public func saveUsers(_ users: [ScaleUser]) throws {
         try save(users, to: usersURL)
+    }
+
+    // MARK: - Goals
+
+    public func loadGoals() throws -> [String: UserGoals] {
+        try load([String: UserGoals].self, from: goalsURL) ?? [:]
+    }
+
+    public func saveGoals(_ goals: [String: UserGoals]) throws {
+        try save(goals, to: goalsURL)
+    }
+
+    public func goals(uidHex: String) throws -> UserGoals {
+        try loadGoals()[uidHex] ?? UserGoals()
+    }
+
+    public func setWeightGoal(uidHex: String, weightKg: Double?) throws {
+        var all = try loadGoals()
+        var goals = all[uidHex] ?? UserGoals()
+        goals.weightKg = weightKg
+        all[uidHex] = goals
+        try saveGoals(all)
     }
 
     // MARK: - Measurements

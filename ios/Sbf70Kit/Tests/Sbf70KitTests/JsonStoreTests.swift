@@ -44,6 +44,19 @@ final class JsonStoreTests: XCTestCase {
         XCTAssertEqual(loaded, settings)
     }
 
+    func testGoalsRoundTrip() async throws {
+        let store = makeStore()
+        let uid = "0000000000000065"
+        try await store.setWeightGoal(uidHex: uid, weightKg: 68.5)
+
+        let goals = try await store.goals(uidHex: uid)
+        XCTAssertEqual(goals.weightKg, 68.5)
+
+        try await store.setWeightGoal(uidHex: uid, weightKg: 67.2)
+        let allGoals = try await store.loadGoals()
+        XCTAssertEqual(allGoals[uid]?.weightKg, 67.2)
+    }
+
     func testMergeDedupesByTimestamp() async throws {
         let store = makeStore()
         let uid = "0000000000000065"
