@@ -161,7 +161,6 @@ struct UsersView: View {
         }
         .task {
             await loadCached()
-            await model.loadGoals()
             if let client = session.client {
                 await model.refresh(client: client)
                 await loadCached()
@@ -201,11 +200,11 @@ struct UsersView: View {
 
     private func weightGoalBinding(for user: ScaleUser) -> Binding<Double> {
         Binding(
-            get: { model.goals[user.uidHex]?.weightKg ?? 70 },
+            get: { appSettings.goals[user.uidHex]?.weightKg ?? 70 },
             set: { newValue in
                 let clamped = min(max(newValue, 20), 300)
                 let rounded = (clamped * 10).rounded() / 10
-                Task { await model.setWeightGoal(uidHex: user.uidHex, weightKg: rounded) }
+                Task { await appSettings.setWeightGoal(uidHex: user.uidHex, weightKg: rounded) }
             }
         )
     }

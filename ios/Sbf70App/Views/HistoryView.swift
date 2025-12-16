@@ -387,7 +387,7 @@ struct HistoryView: View {
                         Image(systemName: trend.icon)
                     }
                     .font(.caption)
-                    .foregroundStyle(trend.color)
+                    .foregroundStyle(weightTrendColor(for: m, delta: weightDelta))
                     .accessibilityLabel("\(trend.accessibilityLabel) \(String(format: "%+.2f", weightDelta)) kg")
                 }
                 Text(String(format: "%.2f kg", m.weightKg))
@@ -406,13 +406,6 @@ struct HistoryView: View {
             switch self {
             case .up: "arrow.up"
             case .down: "arrow.down"
-            }
-        }
-
-        var color: Color {
-            switch self {
-            case .up: .red
-            case .down: .green
             }
         }
 
@@ -451,6 +444,25 @@ struct HistoryView: View {
 
     private func weightDelta(for m: ScaleMeasurement) -> Double? {
         delta(current: m.weightKg, previous: previousMeasurement(for: m)?.weightKg)
+    }
+
+    /// Target weight for the reading's user, if one has been set.
+    private func weightGoal(for m: ScaleMeasurement) -> Double? {
+        let uidHex = m.uid ?? appSettings.activeUidHex
+        guard let uidHex else { return nil }
+        return appSettings.goals[uidHex]?.weightKg
+    }
+
+    /// Green when the reading moved closer to the goal, red when it moved away,
+    /// and neutral without a goal or when the distance is unchanged.
+    private func weightTrendColor(for m: ScaleMeasurement, delta: Double) -> Color {
+        guard let goal = weightGoal(for: m) else { return .secondary }
+        let previousWeight = m.weightKg - delta
+        let currentDistance = abs(m.weightKg - goal)
+        let previousDistance = abs(previousWeight - goal)
+        if currentDistance < previousDistance { return .green }
+        if currentDistance > previousDistance { return .red }
+        return .secondary
     }
 
     @ViewBuilder
