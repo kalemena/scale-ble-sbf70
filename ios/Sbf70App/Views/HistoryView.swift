@@ -446,23 +446,28 @@ struct HistoryView: View {
         delta(current: m.weightKg, previous: previousMeasurement(for: m)?.weightKg)
     }
 
-    /// Target weight for the reading's user, if one has been set.
-    private func weightGoal(for m: ScaleMeasurement) -> Double? {
+    /// Target weight range for the reading's user, if one has been set.
+    private func weightGoalRange(for m: ScaleMeasurement) -> ClosedRange<Double>? {
         let uidHex = m.uid ?? appSettings.activeUidHex
         guard let uidHex else { return nil }
-        return appSettings.goals[uidHex]?.weightKg
+        return appSettings.goals[uidHex]?.weightRange
     }
 
-    /// Green when the reading moved closer to the goal, red when it moved away,
-    /// and neutral without a goal or when the distance is unchanged.
+    /// Green when the reading moved closer to the goal range, red when it
+    /// moved away, and neutral while inside the range or without a goal.
     private func weightTrendColor(for m: ScaleMeasurement, delta: Double) -> Color {
-        guard let goal = weightGoal(for: m) else { return .secondary }
-        let previousWeight = m.weightKg - delta
-        let currentDistance = abs(m.weightKg - goal)
-        let previousDistance = abs(previousWeight - goal)
-        if currentDistance < previousDistance { return .green }
-        if currentDistance > previousDistance { return .red }
-        return .secondary
+        guard let range = weightGoalRange(for: m) else { return .secondary }
+        let currentDistance = distance(from: m.weightKg, to: range)
+        if currentDistance == 0 { return .secondary }
+        let previousDistance = distance(from: m.weightKg - delta, to: range)
+        return currentDistance < previousDistance ? .green : .red
+    }
+
+    /// Zero when inside the range, otherwise the distance to the nearest bound.
+    private func distance(from weightKg: Double, to range: ClosedRange<Double>) -> Double {
+        if weightKg < range.lowerBound { return range.lowerBound - weightKg }
+        if weightKg > range.upperBound { return weightKg - range.upperBound }
+        return 0
     }
 
     @ViewBuilder

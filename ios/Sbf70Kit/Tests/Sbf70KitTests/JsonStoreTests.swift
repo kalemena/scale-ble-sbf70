@@ -47,14 +47,22 @@ final class JsonStoreTests: XCTestCase {
     func testGoalsRoundTrip() async throws {
         let store = makeStore()
         let uid = "0000000000000065"
-        try await store.setWeightGoal(uidHex: uid, weightKg: 68.5)
+        try await store.setWeightGoal(uidHex: uid, minKg: 67, maxKg: 69.5)
 
         let goals = try await store.goals(uidHex: uid)
-        XCTAssertEqual(goals.weightKg, 68.5)
+        XCTAssertEqual(goals.weightMinKg, 67)
+        XCTAssertEqual(goals.weightMaxKg, 69.5)
+        XCTAssertEqual(goals.weightRange, 67...69.5)
 
-        try await store.setWeightGoal(uidHex: uid, weightKg: 67.2)
+        try await store.setWeightGoal(uidHex: uid, minKg: 68, maxKg: 70)
         let allGoals = try await store.loadGoals()
-        XCTAssertEqual(allGoals[uid]?.weightKg, 67.2)
+        XCTAssertEqual(allGoals[uid]?.weightRange, 68...70)
+    }
+
+    func testLegacySingleWeightGoalDecodesAsRange() throws {
+        let json = #"{"0000000000000065":{"weightKg":68.5}}"#
+        let goals = try JSONDecoder().decode([String: JsonStore.UserGoals].self, from: Data(json.utf8))
+        XCTAssertEqual(goals["0000000000000065"]?.weightRange, 68.5...68.5)
     }
 
     func testMergeDedupesByTimestamp() async throws {

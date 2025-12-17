@@ -34,10 +34,39 @@ public actor JsonStore {
 
     /// Per-user targets. Stored locally (the scale has no goal fields).
     public struct UserGoals: Codable, Equatable, Sendable {
-        public var weightKg: Double?
+        public var weightMinKg: Double?
+        public var weightMaxKg: Double?
 
-        public init(weightKg: Double? = nil) {
-            self.weightKg = weightKg
+        public init(weightMinKg: Double? = nil, weightMaxKg: Double? = nil) {
+            self.weightMinKg = weightMinKg
+            self.weightMaxKg = weightMaxKg
+        }
+
+        /// Target weight range, `nil` until both bounds are available.
+        public var weightRange: ClosedRange<Double>? {
+            guard let lower = weightMinKg ?? weightMaxKg,
+                  let upper = weightMaxKg ?? weightMinKg
+            else { return nil }
+            return Swift.min(lower, upper)...Swift.max(lower, upper)
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case weightMinKg
+            case weightMaxKg
+            case weightKg
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let legacyWeight = try container.decodeIfPresent(Double.self, forKey: .weightKg)
+            weightMinKg = try container.decodeIfPresent(Double.self, forKey: .weightMinKg) ?? legacyWeight
+            weightMaxKg = try container.decodeIfPresent(Double.self, forKey: .weightMaxKg) ?? legacyWeight
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encodeIfPresent(weightMinKg, forKey: .weightMinKg)
+            try container.encodeIfPresent(weightMaxKg, forKey: .weightMaxKg)
         }
     }
 
@@ -119,10 +148,11 @@ public actor JsonStore {
         try loadGoals()[uidHex] ?? UserGoals()
     }
 
-    public func setWeightGoal(uidHex: String, weightKg: Double?) throws {
+    public func setWeightGoal(uidHex: String, minKg: Double, maxKg: Double) throws {
         var all = try loadGoals()
         var goals = all[uidHex] ?? UserGoals()
-        goals.weightKg = weightKg
+        goals.weightMinKg = minKg
+        goals.weightMaxKg = maxKg
         all[uidHex] = goals
         try saveGoals(all)
     }

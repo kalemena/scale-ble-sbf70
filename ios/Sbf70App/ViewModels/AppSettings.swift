@@ -16,9 +16,10 @@ final class AppSettings: ObservableObject {
         try? await JsonStore.shared.saveSettings(settings)
     }
 
-    func setWeightGoal(uidHex: String, weightKg: Double?) async {
+    func setWeightGoal(uidHex: String, minKg: Double, maxKg: Double) async {
         var userGoals = goals[uidHex] ?? JsonStore.UserGoals()
-        userGoals.weightKg = weightKg
+        userGoals.weightMinKg = minKg
+        userGoals.weightMaxKg = maxKg
         goals[uidHex] = userGoals
         try? await JsonStore.shared.saveGoals(goals)
     }

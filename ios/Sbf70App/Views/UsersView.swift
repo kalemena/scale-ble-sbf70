@@ -68,16 +68,23 @@ struct UsersView: View {
                 if let user = selectedUser {
                     Section {
                         GoalValueRow(
-                            label: "Weight target",
+                            label: "Weight min",
                             unit: "kg",
-                            value: weightGoalBinding(for: user),
+                            value: weightRangeBinding(for: user, isMin: true),
+                            bounds: 20...300,
+                            step: 0.1
+                        )
+                        GoalValueRow(
+                            label: "Weight max",
+                            unit: "kg",
+                            value: weightRangeBinding(for: user, isMin: false),
                             bounds: 20...300,
                             step: 0.1
                         )
                     } header: {
                         Text("Goals")
                     } footer: {
-                        Text("Saved on this device for \(user.name.uppercased()).")
+                        Text("Saved on this device for \(user.name.uppercased()). History arrows turn green only when moving toward this range.")
                     }
                 }
             }
@@ -198,13 +205,34 @@ struct UsersView: View {
         return displayUsers.first { $0.uidHex == uidHex }
     }
 
-    private func weightGoalBinding(for user: ScaleUser) -> Binding<Double> {
+    private func weightRangeBinding(for user: ScaleUser, isMin: Bool) -> Binding<Double> {
         Binding(
-            get: { appSettings.goals[user.uidHex]?.weightKg ?? 70 },
+            get: {
+                let range = appSettings.goals[user.uidHex]?.weightRange
+                guard let range else { return isMin ? 68 : 72 }
+                return isMin ? range.lowerBound : range.upperBound
+            },
             set: { newValue in
-                let clamped = min(max(newValue, 20), 300)
+                let clamped = Swift.min(Swift.max(newValue, 20), 300)
                 let rounded = (clamped * 10).rounded() / 10
-                Task { await appSettings.setWeightGoal(uidHex: user.uidHex, weightKg: rounded) }
+                let range = appSettings.goals[user.uidHex]?.weightRange
+                let currentMin = range?.lowerBound ?? 68
+                let currentMax = range?.upperBound ?? 72
+                Task {
+                    if isMin {
+                        await appSettings.setWeightGoal(
+                            uidHex: user.uidHex,
+                            minKg: rounded,
+                            maxKg: Swift.max(currentMax, rounded)
+                        )
+                    } else {
+                        await appSettings.setWeightGoal(
+                            uidHex: user.uidHex,
+                            minKg: Swift.min(currentMin, rounded),
+                            maxKg: rounded
+                        )
+                    }
+                }
             }
         )
     }
