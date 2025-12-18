@@ -264,6 +264,118 @@ final class SBF70ClientTests: XCTestCase {
         }
     }
 
+    // MARK: - listUsersDetailed
+
+    func testListUsersDetailedMergesAndFallsBack() async throws {
+        let transport = MockTransport()
+        transport.onWrite = { frame in
+            switch frame.first {
+            case 0xE6:
+                transport.emitAsync([0xE6, 0x01])
+            case 0xE7 where frame[1] == 0x33:
+                // ACK: E7 F0 33 pad count=2 max=8
+                transport.emitAsync([0xE7, 0xF0, 0x33, 0x00, 2, 8])
+                var u1: [UInt8] = [0xE7, 0x34, 2, 1]
+                u1 += ScaleCodec.encodeUID(0x65)
+                u1 += Array("AAA".utf8) + [100]
+                transport.emitAsync(u1)
+                var u2: [UInt8] = [0xE7, 0x34, 2, 2]
+                u2 += ScaleCodec.encodeUID(0x66)
+                u2 += Array("BBB".utf8) + [90]
+                transport.emitAsync(u2)
+            case 0xE7 where frame[1] == 0x36:
+                // Details only for 0x65; 0x66 stays silent -> fallback.
+                guard ScaleCodec.decodeUID(Array(frame[2...])) == 0x65 else { return }
+                transport.emitAsync([
+                    0xE7, 0xF0, 0x36, 0x00,
+                    65, 65, 65, // name "AAA"
+                    100, // year 2000
+                    0, 15, // birthday 2000-01-15
+                    180, // height
+                    0x83, // male | activity 3
+                ])
+            default:
+                break
+            }
+        }
+        let client = makeClient(transport)
+        await client.start()
+        try await client.initSession()
+        let users = try await client.listUsersDetailed()
+
+        XCTAssertEqual(users.count, 2)
+        XCTAssertEqual(users[0].uidHex, "0000000000000065")
+        XCTAssertEqual(users[0].birthday, "2000-01-15")
+        XCTAssertEqual(users[0].heightCm, 180)
+        XCTAssertEqual(users[0].sex, "male")
+        XCTAssertEqual(users[0].activity, 3)
+        // 0x66 got no details — list record fields survive.
+        XCTAssertEqual(users[1].uidHex, "0000000000000066")
+        XCTAssertEqual(users[1].name, "BBB")
+        XCTAssertNil(users[1].heightCm)
+    }
+
+    // MARK: - addUser / updateUser frame layout
+
+    func testAddUserEncodesFrame() async throws {
+        let transport = MockTransport()
+        transport.onWrite = { frame in
+            switch frame.first {
+            case 0xE6:
+                transport.emitAsync([0xE6, 0x01])
+            case 0xE7 where frame[1] == 0x31:
+                transport.emitAsync([0xE7, 0xF0, 0x31, 0x00]) // ok
+            default:
+                break
+            }
+        }
+        let client = makeClient(transport)
+        await client.start()
+        try await client.initSession()
+
+        // "clé" filters to "CL" (3-char nicknames, A-Z0-9 only, NUL padded).
+        let ok = try await client.addUser(
+            uid: 101,
+            .init(name: "clé", birthYear: 1990, birthMonth: 5, birthDay: 20, heightCm: 178, isMale: true, activity: 3)
+        )
+        XCTAssertTrue(ok)
+
+        let expected: [UInt8] =
+            [0xE7, 0x31] + ScaleCodec.encodeUID(101)
+            + Array("CL".utf8) + [0]
+            + [90, 4, 20, 178, 0x83]
+        XCTAssertEqual(transport.written.last, expected)
+    }
+
+    func testUpdateUserEncodesSameLayoutWithUpdateOpcode() async throws {
+        let transport = MockTransport()
+        transport.onWrite = { frame in
+            switch frame.first {
+            case 0xE6:
+                transport.emitAsync([0xE6, 0x01])
+            case 0xE7 where frame[1] == 0x35:
+                transport.emitAsync([0xE7, 0xF0, 0x35, 0x00]) // ok
+            default:
+                break
+            }
+        }
+        let client = makeClient(transport)
+        await client.start()
+        try await client.initSession()
+
+        let ok = try await client.updateUser(
+            uid: 0x65,
+            .init(name: "ZZ", birthYear: 1985, birthMonth: 1, birthDay: 2, heightCm: 165, isMale: false, activity: 2)
+        )
+        XCTAssertTrue(ok)
+
+        let expected: [UInt8] =
+            [0xE7, 0x35] + ScaleCodec.encodeUID(0x65)
+            + Array("ZZ".utf8) + [0]
+            + [85, 0, 2, 165, 0x02]
+        XCTAssertEqual(transport.written.last, expected)
+    }
+
     // MARK: - deleteUser / deleteSaved
 
     func testDeleteUserAckStatus() async throws {

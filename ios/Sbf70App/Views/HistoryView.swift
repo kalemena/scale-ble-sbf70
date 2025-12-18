@@ -9,6 +9,7 @@ struct HistoryView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var measurements: [ScaleMeasurement] = []
+    @State private var previousByID: [String: ScaleMeasurement] = [:]
     @State private var showFat = true
     @State private var showWater = false
     @State private var showMuscle = false
@@ -417,12 +418,9 @@ struct HistoryView: View {
         }
     }
 
-    /// Reading immediately before `m` by date.
+    /// Reading immediately before `m` by date (precomputed in `reload`).
     private func previousMeasurement(for m: ScaleMeasurement) -> ScaleMeasurement? {
-        guard let index = measurements.firstIndex(where: { $0.id == m.id }),
-              index > 0
-        else { return nil }
-        return measurements[index - 1]
+        previousByID[m.id]
     }
 
     private func trend(current: Double?, previous: Double?) -> TrendDirection? {
@@ -568,9 +566,19 @@ struct HistoryView: View {
 
         guard let uidHex = appSettings.activeUidHex else {
             measurements = []
+            previousByID = [:]
             return
         }
         measurements = (try? await JsonStore.shared.loadMeasurements(uidHex: uidHex)) ?? []
+        // Precompute previous-by-date once: the row/trend code looks it up
+        // several times per row, and firstIndex(where:) made that O(n²).
+        var map: [String: ScaleMeasurement] = [:]
+        var previous: ScaleMeasurement?
+        for measurement in measurements {
+            if map[measurement.id] == nil { map[measurement.id] = previous }
+            previous = measurement
+        }
+        previousByID = map
     }
 
     /// Same "CLE (000065)" display as the Users tab.

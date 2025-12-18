@@ -15,8 +15,8 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-            connectionSection
-            syncSection
+                connectionSection
+                syncSection
                 dataSection
                 aboutSection
             }
@@ -60,6 +60,11 @@ struct SettingsView: View {
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                 }
+                Button("Forget this device", role: .destructive) {
+                    appSettings.settings.lastPeripheralUUID = nil
+                    appSettings.settings.lastDeviceName = nil
+                    Task { await appSettings.save() }
+                }
             }
             if session.isReady {
                 Button("Disconnect", role: .destructive) {
@@ -72,8 +77,6 @@ struct SettingsView: View {
             }
         }
     }
-
-
 
     private var syncSection: some View {
         Section("Sync") {
@@ -406,8 +409,8 @@ private struct ExportDialog: View {
         // Header: timestamp,time_iso,weight_kg,impedance,fat_pct,water_pct,muscle_pct,bone_kg,uid,user_name
         var csv = "timestamp,time_iso,weight_kg,impedance,fat_pct,water_pct,muscle_pct,bone_kg,uid,user_name\n"
         for m in measurements {
-            let uid = m.uid ?? ""
-            let user = m.userName ?? ""
+            let uid = csvEscape(m.uid ?? "")
+            let user = csvEscape(m.userName ?? "")
             csv += "\(m.timestamp),\(m.timeISO),\(m.weightKg),\(m.impedance),\(m.fatPct),\(m.waterPct),\(m.musclePct),\(m.boneKg),\(uid),\(user)\n"
         }
         let data = Data(csv.utf8)
@@ -415,6 +418,12 @@ private struct ExportDialog: View {
             .appendingPathComponent(fileName(for: measurements, ext: "csv"))
         try? data.write(to: url, options: .atomic)
         return url
+    }
+
+    /// RFC 4180: quote fields containing separators/quotes/newlines.
+    private static func csvEscape(_ field: String) -> String {
+        guard field.contains(where: { ",\"\n\r".contains($0) }) else { return field }
+        return "\"\(field.replacingOccurrences(of: "\"", with: "\"\""))\""
     }
 
     /// CLI-compatible JSON for piping into tools/measurements-report.py.

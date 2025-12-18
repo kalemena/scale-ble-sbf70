@@ -270,6 +270,10 @@ layer can be verified on a machine without the full Xcode app build.
 | Wake the scale (step on it) and rescan within ~15 s. Another app
   (HealthCoach, openScale) may be holding the connection.
 
+| Connect spins forever
+| The scale is asleep — wake it (step on it). Connect attempts abort with
+  an error after ~15 s; just tap the scale again and retry.
+
 | Commands time out after connecting
 | The session lapsed — reconnect, or let the app re-init (Sync/Users/Live do
   this automatically).

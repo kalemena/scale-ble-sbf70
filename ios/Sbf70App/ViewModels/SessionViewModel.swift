@@ -53,21 +53,7 @@ final class SessionViewModel: ObservableObject {
     /// Best-effort refresh of the cached user directory right after connecting.
     private func syncUsers(_ client: SBF70Client) async {
         do {
-            let listed = try await client.listUsers()
-            var detailed: [ScaleUser] = []
-            detailed.reserveCapacity(listed.count)
-            for user in listed {
-                guard let details = try? await client.userDetails(uid: user.uid) else {
-                    detailed.append(user)
-                    continue
-                }
-                var merged = user
-                merged.birthday = details.birthday
-                merged.heightCm = details.heightCm
-                merged.sex = details.sex
-                merged.activity = details.activity
-                detailed.append(merged)
-            }
+            let detailed = try await client.listUsersDetailed()
             try await JsonStore.shared.saveUsers(detailed)
         } catch {
             // User sync should never prevent the scale from being usable.

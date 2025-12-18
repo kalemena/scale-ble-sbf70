@@ -152,6 +152,22 @@ final class JsonStoreTests: XCTestCase {
         XCTAssertEqual(users[0].year, 2000)
     }
 
+    /// The app's own JSON export writes only uid/name/year per user — it must
+    /// decode back without the scale-only `index`/`count` keys.
+    func testScaleUserDecodesMinimalExportRoundTrip() throws {
+        let json = #"{"uid":"0000000000000065","name":"CLE","year":2000}"#
+        let user = try JSONDecoder().decode(ScaleUser.self, from: Data(json.utf8))
+        XCTAssertEqual(user.uidHex, "0000000000000065")
+        XCTAssertEqual(user.name, "CLE")
+        XCTAssertEqual(user.year, 2000)
+        XCTAssertEqual(user.index, 0)
+        XCTAssertEqual(user.count, 0)
+
+        let data = try JSONEncoder().encode(user)
+        let decoded = try JSONDecoder().decode(ScaleUser.self, from: data)
+        XCTAssertEqual(decoded, user)
+    }
+
     func testImportCSVFixture() async throws {
         let csv = """
         timestamp,time_iso,weight_kg,impedance,fat_pct,water_pct,muscle_pct,bone_kg,uid,user_name

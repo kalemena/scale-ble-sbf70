@@ -40,6 +40,20 @@ struct ScannerView: View {
                 }
             }
 
+            if let last = lastKnownDevice, connectingID == nil, session.state != .connecting {
+                Section {
+                    Button {
+                        connect(to: FoundDevice(id: last.id, name: last.name, rssi: 0))
+                    } label: {
+                        Label("Reconnect to \(last.name)", systemImage: "arrow.clockwise.circle")
+                    }
+                } header: {
+                    Text("Last scale")
+                } footer: {
+                    Text("No scan needed — wake the scale (step on it) first, it stops advertising after ~15 seconds.")
+                }
+            }
+
             if !scanner.devices.isEmpty {
                 Section("Found scales") {
                     ForEach(scanner.devices) { device in
@@ -114,10 +128,20 @@ struct ScannerView: View {
             await session.connect(id: device.id, name: device.name)
             connectingID = nil
             if session.isReady {
-                appSettings.settings.lastPeripheralUUID = device.id.uuidString
-                appSettings.settings.lastDeviceName = device.name
-                await appSettings.save()
+                // Refresh from the store SessionViewModel just wrote to.
+                await appSettings.load()
             }
         }
+    }
+
+    /// The scale from the previous session, if any — lets the user skip a
+    /// rescan when the peripheral UUID is still valid.
+    private var lastKnownDevice: (id: UUID, name: String)? {
+        guard
+            let uuidString = appSettings.settings.lastPeripheralUUID,
+            let uuid = UUID(uuidString: uuidString)
+        else { return nil }
+        let name = appSettings.settings.lastDeviceName ?? "Scale"
+        return (uuid, name)
     }
 }

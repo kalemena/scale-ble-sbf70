@@ -104,6 +104,22 @@ public struct ScaleUser: Codable, Identifiable, Hashable, Sendable {
         case heightCm = "height_cm"
         case sex, activity
     }
+
+    /// `index`/`count` default to 0: the CLI JSON export (and this app's own
+    /// export) stores only `uid`/`name`/`year` per user (sbf70.py:759), so a
+    /// strict decode of those keys broke imports.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        uidHex = try container.decode(String.self, forKey: .uidHex)
+        name = try container.decode(String.self, forKey: .name)
+        year = try container.decode(Int.self, forKey: .year)
+        index = try container.decodeIfPresent(Int.self, forKey: .index) ?? 0
+        count = try container.decodeIfPresent(Int.self, forKey: .count) ?? 0
+        birthday = try container.decodeIfPresent(String.self, forKey: .birthday)
+        heightCm = try container.decodeIfPresent(Int.self, forKey: .heightCm)
+        sex = try container.decodeIfPresent(String.self, forKey: .sex)
+        activity = try container.decodeIfPresent(Int.self, forKey: .activity)
+    }
 }
 
 // MARK: - Measurement (16-byte payload — sbf70.py:175-202)

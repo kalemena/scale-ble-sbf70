@@ -53,7 +53,7 @@ struct SyncView: View {
                     }
                 }
 
-                if let uidHex = appSettings.activeUidHex {
+                if let uidHex = appSettings.activeUidHex, let client = session.client {
                     Section {
                         Button {
                             Task { await model.sync(client: client, uidHex: uidHex) }
@@ -68,6 +68,12 @@ struct SyncView: View {
                             }
                         }
                         .disabled({ if case .syncing = model.phase { true } else { false } }())
+                    }
+                } else if appSettings.activeUidHex != nil {
+                    Section {
+                        Label("Not connected — connect from the Measure tab.", systemImage: "bolt.slash")
+                            .foregroundStyle(.secondary)
+                            .font(.footnote)
                     }
                 }
 
@@ -114,9 +120,5 @@ struct SyncView: View {
                     .foregroundStyle(.red)
             }
         }
-    }
-
-    private var client: SBF70Client {
-        session.client!
     }
 }

@@ -31,6 +31,7 @@ public final class CoreBluetoothTransport: NSObject, ScaleTransport {
         case characteristicNotFound
         case peripheralNotFound
         case connectionFailed
+        case connectionTimedOut
         case writeFailed
 
         public var errorDescription: String? {
@@ -51,6 +52,8 @@ public final class CoreBluetoothTransport: NSObject, ScaleTransport {
                 return "Scale not found by Bluetooth. Wake it (step on it) and rescan."
             case .connectionFailed:
                 return "Could not connect to the scale. Wake it (step on it) and retry."
+            case .connectionTimedOut:
+                return "Could not connect within the timeout. Wake the scale (step on it) and retry."
             case .writeFailed:
                 return "BLE write failed."
             }
@@ -68,6 +71,7 @@ public final class CoreBluetoothTransport: NSObject, ScaleTransport {
     private var discoverContinuation: CheckedContinuation<Void, Error>?
     private var writeContinuation: CheckedContinuation<Void, Error>?
     private var notifyContinuation: CheckedContinuation<Void, Error>?
+    private var connectTimeoutTask: Task<Void, Never>?
 
     /// Set when the peripheral disconnects unexpectedly while a write is in flight.
     private var isReady = false
@@ -88,7 +92,11 @@ public final class CoreBluetoothTransport: NSObject, ScaleTransport {
     /// `retrievePeripherals` — CoreBluetooth requires the connecting manager
     /// to be the one that vended the peripheral (the scanner's manager vended
     /// the instance the user tapped).
-    public func connect(to identifier: UUID) async throws {
+    ///
+    /// `central.connect` never fails on its own for a sleeping peripheral —
+    /// it keeps trying indefinitely. A timeout aborts the pending connection
+    /// (which surfaces as `didFailToConnect`) so callers can't hang forever.
+    public func connect(to identifier: UUID, timeout: TimeInterval = 15.0) async throws {
         // The manager was just created; its state is .unknown until the
         // first centralManagerDidUpdateState callback — wait for it.
         let state = await awaitResolvedBluetoothState(central)
@@ -101,12 +109,21 @@ public final class CoreBluetoothTransport: NSObject, ScaleTransport {
         self.peripheral = peripheral
         peripheral.delegate = self
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            connectContinuation = continuation
-            central.connect(peripheral, options: nil)
-        }
-
         do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                connectContinuation = continuation
+                central.connect(peripheral, options: nil)
+                connectTimeoutTask = Task { @MainActor [weak self, peripheral] in
+                    try? await Task.sleep(for: .seconds(timeout))
+                    guard !Task.isCancelled else { return }
+                    // Main queue = the central's delegate queue, so this can't
+                    // race a didConnect/didFailToConnect callback.
+                    self?.abortPendingConnect(to: peripheral)
+                }
+            }
+            connectTimeoutTask?.cancel()
+            connectTimeoutTask = nil
+
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 discoverContinuation = continuation
                 peripheral.discoverServices([CBUUID(string: ScaleGATT.serviceUUID)])
@@ -133,9 +150,26 @@ public final class CoreBluetoothTransport: NSObject, ScaleTransport {
             }
             isReady = true
         } catch {
+            connectTimeoutTask?.cancel()
+            connectTimeoutTask = nil
             central.cancelPeripheralConnection(peripheral)
             throw error
         }
+    }
+
+    /// Fail a pending connect on timeout. Runs on the main queue — the same
+    /// queue as the CBCentralManager delegate callbacks — so a continuation
+    /// still pending here means `didConnect` has not fired and cannot fire
+    /// concurrently. Resuming twice is impossible: whichever side wins nils
+    /// `connectContinuation` first.
+    private func abortPendingConnect(to peripheral: CBPeripheral) {
+        guard connectContinuation != nil else { return }
+        let continuation = connectContinuation
+        connectContinuation = nil
+        connectTimeoutTask?.cancel()
+        connectTimeoutTask = nil
+        continuation?.resume(throwing: TransportError.connectionTimedOut)
+        central.cancelPeripheralConnection(peripheral)
     }
 
     // MARK: - ScaleTransport
@@ -152,6 +186,8 @@ public final class CoreBluetoothTransport: NSObject, ScaleTransport {
 
     public func close() async {
         isReady = false
+        connectTimeoutTask?.cancel()
+        connectTimeoutTask = nil
         if let peripheral {
             if let characteristic {
                 peripheral.setNotifyValue(false, for: characteristic)
@@ -175,6 +211,8 @@ extension CoreBluetoothTransport: CBCentralManagerDelegate {
         _ central: CBCentralManager,
         didConnect peripheral: CBPeripheral
     ) {
+        connectTimeoutTask?.cancel()
+        connectTimeoutTask = nil
         connectContinuation?.resume()
         connectContinuation = nil
     }
@@ -184,6 +222,8 @@ extension CoreBluetoothTransport: CBCentralManagerDelegate {
         didFailToConnect peripheral: CBPeripheral,
         error: Error?
     ) {
+        connectTimeoutTask?.cancel()
+        connectTimeoutTask = nil
         connectContinuation?.resume(throwing: error ?? TransportError.connectionFailed)
         connectContinuation = nil
     }

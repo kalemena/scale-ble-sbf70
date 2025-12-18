@@ -148,12 +148,24 @@ public enum ScaleCodec {
     }
 
     /// Format a unix timestamp the way Python's datetime.isoformat() does (UTC, +00:00).
-    public static func timeISO(unixSeconds: UInt32) -> String {
+    ///
+    /// DateFormatter creation is expensive and this runs once per parsed
+    /// measurement during a sync, so the formatter is cached. DateFormatter
+    /// is not thread-safe; the lock guards concurrent parsing from multiple
+    /// actors.
+    private static let isoLock = NSLock()
+    private static let isoFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")
         formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssxxx"
-        return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(unixSeconds)))
+        return formatter
+    }()
+
+    public static func timeISO(unixSeconds: UInt32) -> String {
+        isoLock.lock()
+        defer { isoLock.unlock() }
+        return isoFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(unixSeconds)))
     }
 }
 
