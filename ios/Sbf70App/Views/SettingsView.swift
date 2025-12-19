@@ -28,8 +28,8 @@ struct SettingsView: View {
             Task { await reload() }
         }
         .sheet(isPresented: $showImportDialog) {
-            ImportDialog { format, url in
-                Task { await importFile(format: format, at: url) }
+            ImportDialog { url in
+                Task { await importFile(at: url) }
             }
         }
         .sheet(isPresented: $showExportDialog) {
@@ -129,7 +129,7 @@ struct SettingsView: View {
         counts = (try? await JsonStore.shared.allMeasurementCounts()) ?? [:]
     }
 
-    private func importFile(format: DataFormat, at url: URL) async {
+    private func importFile(at url: URL) async {
         guard url.startAccessingSecurityScopedResource() else {
             importResult = "Cannot access the selected file."
             return
@@ -138,7 +138,7 @@ struct SettingsView: View {
         do {
             let data = try Data(contentsOf: url)
             let results: [String: (inserted: Int, updated: Int)]
-            switch format {
+            switch Self.format(of: url, data: data) {
             case .json:
                 results = try await JsonStore.shared.importCLIExport(data)
             case .csv:
@@ -150,6 +150,22 @@ struct SettingsView: View {
             importResult = "Imported \(total) measurement(s) across \(results.count) user(s)."
         } catch {
             importResult = "Import failed: \(error.localizedDescription)"
+        }
+    }
+
+    private static func format(of url: URL, data: Data) -> DataFormat {
+        switch url.pathExtension.lowercased() {
+        case "csv":
+            return .csv
+        case "json":
+            return .json
+        default:
+            if let prefix = String(data: data.prefix(64), encoding: .utf8),
+               let first = prefix.first(where: { !$0.isWhitespace }),
+               first == "{" || first == "[" {
+                return .json
+            }
+            return .csv
         }
     }
 }
@@ -180,24 +196,15 @@ enum DataFormat: String, CaseIterable, Identifiable {
 // MARK: - Import dialog
 
 private struct ImportDialog: View {
-    let onImport: (DataFormat, URL) -> Void
+    let onImport: (URL) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var format: DataFormat = .json
     @State private var selectedFile: URL?
     @State private var showImporter = false
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Format") {
-                    Picker("Format", selection: $format) {
-                        ForEach(DataFormat.allCases) { format in
-                            Text(format.title).tag(format)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                }
                 Section("File") {
                     Button {
                         showImporter = true
@@ -226,19 +233,16 @@ private struct ImportDialog: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Import") {
                         if let selectedFile {
-                            onImport(format, selectedFile)
+                            onImport(selectedFile)
                         }
                         dismiss()
                     }
                     .disabled(selectedFile == nil)
                 }
             }
-            .onChange(of: format) { _, _ in
-                selectedFile = nil
-            }
             .fileImporter(
                 isPresented: $showImporter,
-                allowedContentTypes: [format.contentType]
+                allowedContentTypes: DataFormat.allCases.map(\.contentType)
             ) { result in
                 if case let .success(url) = result {
                     selectedFile = url
@@ -260,7 +264,7 @@ private struct ExportDialog: View {
     }
 
     @Environment(\.dismiss) private var dismiss
-    @State private var format: DataFormat = .json
+    @State private var format: DataFormat = .csv
     @State private var userEntries: [UserEntry] = []
     @State private var selectedUIDs: Set<String> = []
     @State private var measurementsByUID: [String: [ScaleMeasurement]] = [:]
