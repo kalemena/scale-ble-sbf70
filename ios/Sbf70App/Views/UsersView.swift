@@ -10,6 +10,7 @@ struct UsersView: View {
     @State private var pendingDelete: ScaleUser?
     @State private var editUser: ScaleUser?
     @State private var cachedUsers: [ScaleUser] = []
+    @State private var showConnectAlert = false
 
     var body: some View {
         NavigationStack {
@@ -92,23 +93,20 @@ struct UsersView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        Task {
-                            if let client = session.client {
-                                await model.refresh(client: client)
-                            }
-                        }
+                        guard requireConnection(), let client = session.client else { return }
+                        Task { await model.refresh(client: client) }
                     } label: {
                         Label("Refresh", systemImage: "arrow.clockwise")
                     }
-                    .disabled(!session.isReady || model.isLoading)
+                    .disabled(model.isLoading)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        guard requireConnection() else { return }
                         showAddForm = true
                     } label: {
                         Label("Add", systemImage: "plus")
                     }
-                    .disabled(!session.isReady)
                 }
             }
             .sheet(isPresented: $showAddForm) {
@@ -129,12 +127,21 @@ struct UsersView: View {
                 titleVisibility: .visible
             ) {
                 Button("Delete", role: .destructive) {
-                    guard let user = pendingDelete, let client = session.client else { return }
+                    guard let user = pendingDelete else { return }
                     pendingDelete = nil
+                    guard requireConnection(), let client = session.client else { return }
                     Task { await model.delete(client: client, user: user) }
                 }
             } message: {
                 Text("The profile and its saved measurements on the scale will be removed.")
+            }
+            .alert(
+                "Scale Not Connected",
+                isPresented: $showConnectAlert
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Connect the scale from the Measure tab to sync or manage users.")
             }
             .sheet(isPresented: Binding(
                 get: { editUser != nil },
@@ -144,7 +151,10 @@ struct UsersView: View {
                     UserEditSheet(user: model.details[user.uidHex] ?? user) { newUser in
                         editUser = nil
                         Task { @MainActor in
-                            guard let client = session.client else { return }
+                            guard let client = session.client else {
+                                showConnectAlert = true
+                                return
+                            }
                             do {
                                 try await client.initSession()
                                 let ok = try await client.updateUser(uid: user.uid, newUser)
@@ -272,17 +282,28 @@ struct UsersView: View {
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button {
+                guard requireConnection() else { return }
                 editUser = user
             } label: {
                 Label("Edit", systemImage: "pencil")
             }
             .tint(.blue)
             Button(role: .destructive) {
+                guard requireConnection() else { return }
                 pendingDelete = user
             } label: {
                 Label("Delete", systemImage: "trash")
             }
         }
+    }
+
+    /// Gates scale-dependent actions: shows the connect prompt when offline.
+    private func requireConnection() -> Bool {
+        guard session.isReady else {
+            showConnectAlert = true
+            return false
+        }
+        return true
     }
 }
 
