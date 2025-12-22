@@ -399,12 +399,6 @@ private struct AddUserForm: View {
                         Text("5 (high)").tag(5)
                     }
                 }
-
-                Section {
-                    Text("Experimental: the add-user frame is ported from openScale and is not yet verified on hardware. Prefer the vendor app if this fails.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
             .navigationTitle("New User")
             .navigationBarTitleDisplayMode(.inline)

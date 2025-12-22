@@ -118,7 +118,7 @@ struct SettingsView: View {
 
     private var aboutSection: some View {
         Section("About") {
-            Text("iOS client for the Sanitas SBF70 / Beurer BF710 family, ported from the Python CLI in tools/sbf70-cli. Protocol: openScale BeurerSanitasHandler.")
+            Text("iOS client for the Sanitas SBF70 / Beurer BF710 family.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

@@ -42,7 +42,6 @@ final class UsersViewModel: ObservableObject {
         }
     }
 
-    /// Experimental — frame layout ported from openScale, not yet verified on hardware.
     func add(client: SBF70Client, _ newUser: SBF70Client.NewUser) async {
         errorMessage = nil
         noticeMessage = nil
