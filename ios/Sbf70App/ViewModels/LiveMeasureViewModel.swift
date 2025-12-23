@@ -8,6 +8,7 @@ final class LiveMeasureViewModel: ObservableObject {
     @Published private(set) var liveWeightKg: Double?
     @Published private(set) var isStable = false
     @Published private(set) var result: ScaleMeasurement?
+    @Published private(set) var previous: ScaleMeasurement?
     @Published private(set) var saved = false
     @Published var errorMessage: String?
 
@@ -16,6 +17,7 @@ final class LiveMeasureViewModel: ObservableObject {
         liveWeightKg = nil
         isStable = false
         result = nil
+        previous = nil
         saved = false
         errorMessage = nil
         defer { isMeasuring = false }
@@ -33,6 +35,7 @@ final class LiveMeasureViewModel: ObservableObject {
                 result = measurement
                 var toSave = measurement
                 toSave.uid = uidHex
+                previous = await Self.latestStoredMeasurement(before: toSave.timestamp, uidHex: uidHex)
                 try await JsonStore.shared.mergeMeasurements(uidHex: uidHex, new: [toSave])
                 saved = true
             } else {
@@ -42,5 +45,13 @@ final class LiveMeasureViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Most recent stored reading strictly before the new one, for trend deltas.
+    private static func latestStoredMeasurement(before timestamp: Int, uidHex: String) async -> ScaleMeasurement? {
+        let stored = (try? await JsonStore.shared.loadMeasurements(uidHex: uidHex)) ?? []
+        return stored
+            .filter { $0.timestamp < timestamp }
+            .max { $0.timestamp < $1.timestamp }
     }
 }

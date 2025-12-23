@@ -115,12 +115,40 @@ struct LiveMeasureView: View {
     @ViewBuilder
     private func resultSection(_ result: ScaleMeasurement) -> some View {
         Section("Measurement") {
-            metricRow("Weight", icon: "scalemass.fill", value: String(format: "%.2f kg", result.weightKg))
+            metricRow(
+                "Weight",
+                icon: "scalemass.fill",
+                value: String(format: "%.2f kg", result.weightKg),
+                delta: delta(current: result.weightKg, previous: model.previous?.weightKg),
+                decimals: 2,
+                deltaColor: weightTrendColor(current: result.weightKg, delta: delta(current: result.weightKg, previous: model.previous?.weightKg))
+            )
             bmiRow(result)
-            metricRow("Fat", icon: "pizza.slice", value: String(format: "%.1f %%", result.fatPct))
-            metricRow("Water", icon: "humidity.fill", value: String(format: "%.1f %%", result.waterPct))
-            metricRow("Muscle", icon: "dumbbell.fill", value: String(format: "%.1f %%", result.musclePct))
-            metricRow("Bone", icon: "figure.walk", value: String(format: "%.2f kg", result.boneKg))
+            metricRow(
+                "Fat",
+                icon: "pizza.slice",
+                value: String(format: "%.1f %%", result.fatPct),
+                delta: delta(current: result.fatPct, previous: model.previous?.fatPct)
+            )
+            metricRow(
+                "Water",
+                icon: "humidity.fill",
+                value: String(format: "%.1f %%", result.waterPct),
+                delta: delta(current: result.waterPct, previous: model.previous?.waterPct)
+            )
+            metricRow(
+                "Muscle",
+                icon: "dumbbell.fill",
+                value: String(format: "%.1f %%", result.musclePct),
+                delta: delta(current: result.musclePct, previous: model.previous?.musclePct)
+            )
+            metricRow(
+                "Bone",
+                icon: "figure.walk",
+                value: String(format: "%.2f kg", result.boneKg),
+                delta: delta(current: result.boneKg, previous: model.previous?.boneKg),
+                decimals: 2
+            )
             metricRow("Impedance", icon: "bolt.fill", value: "\(result.impedance) Ω")
             if model.saved {
                 Label("Saved to history", systemImage: "checkmark.circle")
@@ -133,15 +161,60 @@ struct LiveMeasureView: View {
     @ViewBuilder
     private func bmiRow(_ result: ScaleMeasurement) -> some View {
         let bmiInfo = bmiInfo(for: result)
-        metricRow("BMI", icon: bmiInfo.icon, value: bmiInfo.text, iconColor: bmiInfo.color)
+        metricRow(
+            "BMI",
+            icon: bmiInfo.icon,
+            value: bmiInfo.text,
+            iconColor: bmiInfo.color,
+            delta: delta(current: bmi(for: result), previous: model.previous.flatMap { bmi(for: $0) })
+        )
     }
 
     private func bmiInfo(for measurement: ScaleMeasurement) -> BMIInfo {
         BMIInfo(bmi: bmi(for: measurement))
     }
 
-    private func metricRow(_ label: String, icon: String, value: String, iconColor: Color = .secondary) -> some View {
-        MetricRow(label: label, icon: icon, value: value, iconColor: iconColor)
+    private func metricRow(
+        _ label: String,
+        icon: String,
+        value: String,
+        iconColor: Color = .secondary,
+        delta: Double? = nil,
+        decimals: Int = 1,
+        deltaColor: Color = .secondary
+    ) -> some View {
+        MetricRow(
+            label: label,
+            icon: icon,
+            value: value,
+            iconColor: iconColor,
+            delta: delta,
+            decimals: decimals,
+            deltaColor: deltaColor
+        )
+    }
+
+    private func delta(current: Double?, previous: Double?) -> Double? {
+        guard let current, let previous else { return nil }
+        return current - previous
+    }
+
+    /// Green when the reading moved closer to the goal range, red when it
+    /// moved away, and neutral while inside the range or without a goal.
+    private func weightTrendColor(current: Double, delta: Double?) -> Color {
+        guard let delta, let uidHex = appSettings.activeUidHex,
+              let range = appSettings.goals[uidHex]?.weightRange else { return .secondary }
+        let currentDistance = distance(from: current, to: range)
+        if currentDistance == 0 { return .secondary }
+        let previousDistance = distance(from: current - delta, to: range)
+        return currentDistance < previousDistance ? .green : .red
+    }
+
+    /// Zero when inside the range, otherwise the distance to the nearest bound.
+    private func distance(from weightKg: Double, to range: ClosedRange<Double>) -> Double {
+        if weightKg < range.lowerBound { return range.lowerBound - weightKg }
+        if weightKg > range.upperBound { return weightKg - range.upperBound }
+        return 0
     }
 
     private var client: SBF70Client {
@@ -161,12 +234,34 @@ struct LiveMeasureView: View {
     }
 }
 
-/// One measurement row: icon + label on the left, value on the right.
+/// One measurement row: icon + label on the left, value on the right,
+/// with an optional up/down trend arrow and delta before the value.
 struct MetricRow: View {
     let label: String
     let icon: String
     let value: String
     var iconColor: Color = .secondary
+    var delta: Double?
+    var decimals: Int = 1
+    var deltaColor: Color = .secondary
+
+    init(
+        label: String,
+        icon: String,
+        value: String,
+        iconColor: Color = .secondary,
+        delta: Double? = nil,
+        decimals: Int = 1,
+        deltaColor: Color = .secondary
+    ) {
+        self.label = label
+        self.icon = icon
+        self.value = value
+        self.iconColor = iconColor
+        self.delta = delta
+        self.decimals = decimals
+        self.deltaColor = deltaColor
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -176,10 +271,21 @@ struct MetricRow: View {
                 .accessibilityHidden(true)
             Text(label)
             Spacer()
+            if let delta, delta != 0 {
+                HStack(spacing: 2) {
+                    Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
+                        .accessibilityHidden(true)
+                    Text(String(format: "%+.\(decimals)f", delta))
+                }
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(deltaColor)
+            }
             Text(value)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
