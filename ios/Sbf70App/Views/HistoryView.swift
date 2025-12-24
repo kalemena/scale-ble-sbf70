@@ -378,7 +378,7 @@ struct HistoryView: View {
     private func row(_ m: ScaleMeasurement) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
-                Text(m.date.formatted(date: .abbreviated, time: .shortened))
+                Text("\(m.date.formatted(.dateTime.weekday(.abbreviated))), \(m.date.formatted(date: .abbreviated, time: .shortened))")
                     .font(.subheadline)
                 Spacer()
                 if let trend = weightTrend(for: m), let weightDelta = weightDelta(for: m) {
